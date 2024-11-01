@@ -76,11 +76,32 @@ impl MOS6502 {
         println!("SP: {:04x} PC: {:04x}", self.s, self.pc);
     }
 
-    fn set_flags(&mut self, val: u8) {
+    fn flag_updation(&mut self, val: u8) {
         if val == 0 {
             self.zero = true;
         }
         self.negative = (val >> 7) != 0;
+    }
+
+    fn get_flags_byte(&self, b: bool) -> u8 {
+        ((self.negative as u8) << 7)
+            | ((self.overflow as u8) << 6)
+            | (1u8 << 5)
+            | ((b as u8) << 4)
+            | ((self.decimal_mode as u8) << 3)
+            | ((self.interrupt_disable as u8) << 2)
+            | ((self.zero as u8) << 1)
+            | (self.carry as u8)
+    }
+
+    fn push(&mut self, val: u8) {
+        self.write(self.s as u16 + 0x100, val);
+        self.s -= 1;
+    }
+
+    fn push16(&mut self, val: u16) {
+        self.push(val as u8);
+        self.push((val >> 8) as u8);
     }
 
     fn key_down(&mut self, _b: Button) {}
@@ -129,110 +150,131 @@ impl MOS6502 {
         self.carry = result_16 > 255;
         self.overflow =
             (is_negative(self.a) == is_negative(op)) && (is_negative(result) != is_negative(op));
-        self.set_flags(result);
+        self.flag_updation(result);
 
         result
     }
 
     fn and(&mut self, op: u8) -> u8 {
         let result: u8 = self.a & op;
-        self.set_flags(result);
+        self.flag_updation(result);
         result
     }
 
     fn asl(&mut self, op1: u8) -> u8 {
         let result: u8 = op1 << 1;
 
-        self.set_flags(result);
+        self.flag_updation(result);
         self.carry = is_negative(op1);
         result
     }
 
+    fn bit(&mut self, op: u8) {
+        let result: u8 = self.a & op;
+
+        self.zero = result == 0;
+        self.overflow = (op & 0b01000000) != 0;
+        self.negative = is_negative(op);
+    }
+
+    fn cmp(&mut self, op1:u8, op2: u8) {
+        self.carry = op1 >= op2;
+        self.flag_updation(op2 - op1);
+    }
+
+    fn dec(&mut self, addr: u16) {
+        let result: u8 = self.read(addr) - 1;
+        self.flag_updation(result);
+        self.write(addr, result);
+    }
+
+    fn xor(&mut self, op: u8) -> u8 {
+        let result: u8 = self.a ^ op;
+        self.flag_updation(result);
+        result
+    }
+
+    fn inc(&mut self, addr: u16) {
+        let result: u8 = self.read(addr) + 1;
+        self.flag_updation(result);
+        self.write(addr, result);
+    }
+
     fn step(&mut self) {
         let opcode: u8 = self.read(self.pc);
+
+        let arg: u8 = self.read(self.pc + 1);
+        let arg16: u16 = self.read16(self.pc + 1);
+
         println!("Executing {:02x}", opcode);
         match opcode {
             // ADC
             0x69 => {
-                let arg: u8 = self.read(self.pc + 1);
                 self.a = self.adc(arg);
                 self.pc += 2;
             }
             0x65 => {
-                let arg: u8 = self.read(self.pc + 1);
                 self.a = self.adc(self.read(arg as u16));
                 self.pc += 2;
             }
             0x75 => {
-                let arg: u8 = self.read(self.pc + 1);
                 self.a = self.adc(self.read((arg + self.x) as u16));
                 self.pc += 2;
             }
             0x6d => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.adc(self.read(arg));
+                self.a = self.adc(self.read(arg16));
                 self.pc += 3;
             }
             0x7d => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.adc(self.read(arg + self.x as u16));
+                self.a = self.adc(self.read(arg16 + self.x as u16));
                 self.pc += 3;
             }
             0x79 => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.adc(self.read(arg + self.y as u16));
+                self.a = self.adc(self.read(arg16 + self.y as u16));
                 self.pc += 3;
             }
             0x61 => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.adc(self.read(self.read16_within_zero_page(arg as u8 + self.x)));
+                self.a = self.adc(self.read(self.read16_within_zero_page(arg + self.x)));
                 self.pc += 2;
             }
             0x71 => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.adc(self.read(self.read16_within_zero_page(arg as u8) + self.y as u16));
+                self.a =
+                    self.adc(self.read(self.read16_within_zero_page(arg) + self.y as u16));
                 self.pc += 2;
             }
 
             // AND
             0x29 => {
-                let arg: u8 = self.read(self.pc + 1);
                 self.a = self.and(arg);
                 self.pc += 2;
             }
             0x25 => {
-                let arg: u8 = self.read(self.pc + 1);
-                self.a = self.and(self.read(arg as u16));
+                self.a = self.and(self.read_within_zero_page(arg));
                 self.pc += 2;
             }
             0x35 => {
-                let arg: u8 = self.read(self.pc + 1);
-                self.a = self.and(self.read((arg + self.x) as u16));
+                self.a = self.and(self.read_within_zero_page(arg + self.x));
                 self.pc += 2;
             }
             0x2d => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.and(self.read(arg));
+                self.a = self.and(self.read(arg16));
                 self.pc += 3;
             }
             0x3d => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.and(self.read(arg + self.x as u16));
+                self.a = self.and(self.read(arg16 + self.x as u16));
                 self.pc += 3;
             }
             0x39 => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.and(self.read(arg + self.y as u16));
+                self.a = self.and(self.read(arg16 + self.y as u16));
                 self.pc += 3;
             }
             0x21 => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.and(self.read(self.read16_within_zero_page(arg as u8 + self.x)));
+                self.a = self.and(self.read(self.read16_within_zero_page(arg + self.x)));
                 self.pc += 2;
             }
             0x31 => {
-                let arg: u16 = self.read16(self.pc + 1);
-                self.a = self.and(self.read(self.read16_within_zero_page(arg as u8) + self.y as u16));
+                self.a =
+                    self.and(self.read(self.read16_within_zero_page(arg) + self.y as u16));
                 self.pc += 2;
             }
 
@@ -242,29 +284,341 @@ impl MOS6502 {
                 self.pc += 1;
             }
             0x06 => {
-                let arg: u8 = self.read(self.pc + 1);
                 let result = self.asl(self.read_within_zero_page(arg));
                 self.write_within_zero_page(arg, result);
                 self.pc += 2;
             }
             0x16 => {
-                let arg: u8 = self.read(self.pc + 1);
                 let result = self.asl(self.read_within_zero_page(arg + self.x));
                 self.write_within_zero_page(arg, result);
                 self.pc += 2;
             }
             0x0e => {
-                let arg: u16 = self.read16(self.pc + 1);
-                let result = self.asl(self.read(arg));
-                self.write(arg, result);
+                let result = self.asl(self.read(arg16));
+                self.write(arg16, result);
                 self.pc += 3;
             }
             0x1e => {
-                let arg: u16 = self.read16(self.pc + 1);
-                let result = self.asl(self.read(arg + self.x as u16));
-                self.write(arg + self.x as u16, result);
+                let result = self.asl(self.read(arg16 + self.x as u16));
+                self.write(arg16 + self.x as u16, result);
                 self.pc += 3;
             }
+
+            // BCC
+            0x90 => {
+                if !self.carry {
+                    self.pc += 2 + arg as i8 as u16;
+                }
+            }
+
+            // BCS
+            0xB0 => {
+                if self.carry {
+                    self.pc += 2 + arg as i8 as u16;
+                }
+            }
+
+            // BEQ
+            0xF0 => {
+                if self.zero {
+                    self.pc += 2 + arg as i8 as u16;
+                }
+            }
+
+            // BIT
+            0x24 => {
+                self.bit(self.read_within_zero_page(arg));
+                self.pc += 2;
+            }
+            0x2c => {
+                self.bit(self.read(arg16));
+                self.pc += 3;
+            }
+
+            // BMI
+            0x30 => {
+                if self.negative {
+                    self.pc += 2 + arg as i8 as u16;
+                }
+            }
+
+            // BNE
+            0xd0 => {
+                if !self.zero {
+                    self.pc += 2 + arg as i8 as u16;
+                }
+            }
+
+            // BPL
+            0x10 => {
+                if !self.negative {
+                    self.pc += 2 + arg as i8 as u16;
+                }
+            }
+
+            // BRK
+            0x00 => {
+                self.push16(self.pc + 2);
+                self.push(self.get_flags_byte(true));
+                self.pc = self.read16(0xfffe);
+                self.interrupt_disable = true;
+            }
+
+            // BVC
+            0x50 => {
+                if !self.overflow {
+                    self.pc += 2 + arg as i8 as u16;
+                }
+            }
+
+            // BVS
+            0x70 => {
+                if self.overflow {
+                    self.pc += 2 + arg as i8 as u16;
+                }
+            }
+
+            // CLC
+            0x18 => {
+                self.carry = false;
+                self.pc += 1;
+            }
+
+            // CLD
+            0xd8 => {
+                self.decimal_mode = false;
+                self.pc += 1;
+            }
+
+            // CLI
+            0x58 => {
+                self.interrupt_disable = false;
+                self.pc += 1;
+            }
+
+            // CLV
+            0xb8 => {
+                self.overflow = false;
+                self.pc += 1;
+            }
+
+            // CMP
+            0xc9 => {
+                self.cmp(self.a, arg);
+                self.pc += 2;
+            }
+            0xc5 => {
+                self.cmp(self.a, self.read_within_zero_page(arg));
+                self.pc += 2;
+            }
+            0xd5 => {
+                self.cmp(self.a, self.read_within_zero_page(arg + self.x));
+                self.pc += 2;
+            }
+            0xcd => {
+                self.cmp(self.a, self.read(arg16));
+                self.pc += 3;
+            }
+            0xdd => {
+                self.cmp(self.a, self.read(arg16 + self.x as u16));
+                self.pc += 3;
+            }
+            0xd9 => {
+                self.cmp(self.a, self.read(arg16 + self.y as u16));
+                self.pc += 3;
+            }
+            0xc1 => {
+                self.cmp(self.a, self.read(self.read16_within_zero_page(arg + self.x)));
+                self.pc += 2;
+            }
+            0xd1 => {
+                self.cmp(self.a, self.read(self.read16_within_zero_page(arg) + self.y as u16));
+                self.pc += 2;
+            }
+
+            // CPX
+            0xe0 => {
+                self.cmp(self.x, arg);
+                self.pc += 2;
+            }
+            0xe4 => {
+                self.cmp(self.x, self.read_within_zero_page(arg));
+                self.pc += 2;
+            }
+            0xec => {
+                self.cmp(self.x, self.read(arg16));
+                self.pc += 3;
+            }
+
+            // CPY
+            0xc0 => {
+                self.cmp(self.y, arg);
+                self.pc += 2;
+            }
+            0xc4 => {
+                self.cmp(self.y, self.read_within_zero_page(arg));
+                self.pc += 2;
+            }
+            0xcc => {
+                self.cmp(self.y, self.read(arg16));
+                self.pc += 3;
+            }
+
+            // DEC
+            0xc6 => {
+                self.dec(arg as u16);
+                self.pc += 2;
+            }
+            0xd6 => {
+                self.dec((arg + self.x) as u16);
+                self.pc += 2;
+            }
+            0xce => {
+                self.dec(arg16);
+                self.pc += 3;
+            }
+            0xde => {
+                self.dec(arg16 + self.x as u16);
+                self.pc += 3;
+            }
+
+            // DEX
+            0xca => {
+                self.x -= 1;
+                self.flag_updation(self.x);
+                self.pc += 1;
+            }
+
+            // DEY
+            0x88 => {
+                self.y -= 1;
+                self.flag_updation(self.y);
+                self.pc += 1;
+            }
+
+            // EOR
+            0x49 => {
+                self.a = self.xor(arg);
+                self.pc += 2;
+            }
+            0x45 => {
+                self.a = self.xor(self.read_within_zero_page(arg));
+                self.pc += 2;
+            }
+            0x55 => {
+                self.a = self.xor(self.read_within_zero_page(arg + self.x));
+                self.pc += 2;
+            }
+            0x4d => {
+                self.a = self.xor(self.read(arg16));
+                self.pc += 3;
+            }
+            0x5d => {
+                self.a = self.xor(self.read(arg16 + self.x as u16));
+                self.pc += 3;
+            }
+            0x59 => {
+                self.a = self.xor(self.read(arg16 + self.y as u16));
+                self.pc += 3;
+            }
+            0x41 => {
+                self.a = self.xor(self.read(self.read16_within_zero_page(arg + self.x)));
+                self.pc += 2;
+            }
+            0x51 => {
+                self.a =
+                    self.xor(self.read(self.read16_within_zero_page(arg) + self.y as u16));
+                self.pc += 2;
+            }
+
+            // INC
+            0xe6 => {
+                self.inc(arg as u16);
+                self.pc += 2;
+            }
+            0xf6 => {
+                self.inc((arg + self.x) as u16);
+                self.pc += 2;
+            }
+            0xee => {
+                self.inc(arg16);
+                self.pc += 3;
+            }
+            0xfe => {
+                self.inc(arg16 + self.x as u16);
+                self.pc += 3;
+            }
+
+            // INX
+            0xe8 => {
+                self.x += 1;
+                self.flag_updation(self.x);
+                self.pc += 1;
+            }
+
+            // INY
+            0xc8 => {
+                self.y += 1;
+                self.flag_updation(self.y);
+                self.pc += 1;
+            }
+
+            // JMP
+            0x4c => {
+                self.pc = arg16;
+            }
+            0x6c => {
+                self.pc = self.read16(arg16);
+            }
+
+            // JSR
+            0x20 => {
+                self.push16(self.pc + 2);
+                self.pc = arg16;
+            }
+
+            // LDA
+            0xa9 => {
+                self.a = arg;
+                self.flag_updation(self.a);
+                self.pc += 2;
+            }
+            0xa5 => {
+                self.a = self.read_within_zero_page(arg);
+                self.flag_updation(self.a);
+                self.pc += 2;
+            }
+            0xb5 => {
+                self.a = self.read_within_zero_page(arg + self.x);
+                self.flag_updation(self.a);
+                self.pc += 2;
+            }
+            0xad => {
+                self.a = self.read(arg16);
+                self.flag_updation(self.a);
+                self.pc += 3;
+            }
+            0xbd => {
+                self.a = self.read(arg16 + self.x as u16);
+                self.flag_updation(self.a);
+                self.pc += 3;
+            }
+            0xb9 => {
+                self.a = self.read(arg16 + self.y as u16);
+                self.flag_updation(self.a);
+                self.pc += 3;
+            }
+            0xa1 => {
+                self.a = self.read(self.read16_within_zero_page(arg + self.x));
+                self.flag_updation(self.a);
+                self.pc += 2;
+            }
+            0xb1 => {
+                self.a = self.read(self.read16_within_zero_page(arg) + self.y as u16);
+                self.flag_updation(self.a);
+                self.pc += 2;
+            }
+
             _ => todo!(),
         }
     }
@@ -299,7 +653,6 @@ fn main() {
     let mut canvas = window.into_canvas().build().expect("Couldn't build canvas");
     canvas.present();
     let mut event_pump = sdl_context.event_pump().expect("Couldn't make event pump");
-
 
     println!("Started up!");
     cpu.dump_regs();

@@ -25,8 +25,8 @@ struct MOS6502 {
     // mirror_ppu_regs: [u8; 8 * 0x3ff],
     apu_and_io_regs: [u8; 0x18],
     // test_regs: [u8; 8],
-    // unused: [u8; 0x1fe0],
-    cartridge: [u8; 0x10000 - 0x4020],
+    cartridge_ram: [u8; 0x3fe0],
+    cartridge_rom: [u8; 0x8000],
 }
 
 enum Button {
@@ -47,7 +47,7 @@ impl Default for MOS6502 {
             x: 0,
             y: 0,
             s: 0xfd,
-            pc: 0xfffc,
+            pc: 0x0000, // Gets filled in by MOS6502::new
             carry: false,
             zero: false,
             interrupt_disable: true,
@@ -57,7 +57,8 @@ impl Default for MOS6502 {
             ram: [0; 0x800],
             ppu_regs: [0, 0, 0b10100000, 0, 0, 0, 0, 0],
             apu_and_io_regs: [0; 0x18], // TODO
-            cartridge: [0; 0x10000 - 0x4020],
+            cartridge_ram: [0; 0x3fe0],
+            cartridge_rom: [0; 0x8000],
         }
     }
 }
@@ -66,8 +67,9 @@ impl MOS6502 {
     fn new(rom_file: &mut File) -> Self {
         let mut result: Self = Default::default();
         rom_file
-            .read(&mut result.cartridge)
+            .read(&mut result.cartridge_rom)
             .expect("Couldn't read rom file");
+        result.pc = result.read16(result.read16(0xfffc));
         result
     }
 
@@ -130,7 +132,8 @@ impl MOS6502 {
             0x0000..0x2000 => self.ram[(addr % 0x0800) as usize],
             0x2000..0x4000 => self.ppu_regs[(addr % 8) as usize],
             0x4000..0x4018 => self.apu_and_io_regs[(addr - 0x4000) as usize],
-            0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize],
+            0x4020..0x8000 => self.cartridge_ram[(addr - 0x4020) as usize],
+            0x8000..=0xffff => self.cartridge_rom[(addr - 0x8000) as usize],
             _ => panic!("Invalid memory read!"),
         }
     }
@@ -144,7 +147,8 @@ impl MOS6502 {
             0x0000..0x2000 => self.ram[(addr % 0x0800) as usize] = val,
             0x2000..0x4000 => self.ppu_regs[(addr % 8) as usize] = val,
             0x4000..0x4018 => self.apu_and_io_regs[(addr - 0x4000) as usize] = val,
-            0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize] = val,
+            0x4020..0x8000 => self.cartridge_ram[(addr - 0x4020) as usize] = val,
+            0x8000..=0xffff => self.cartridge_rom[(addr - 0x8000) as usize] = val,
             _ => panic!("Invalid memory write!"),
         }
     }
@@ -208,7 +212,7 @@ impl MOS6502 {
     }
 
     fn lsr(&mut self, op: u8) -> u8 {
-        let result: u8 = op << 1;
+        let result: u8 = op >> 1;
         self.flag_updation(result);
         self.carry = (op & 1) != 0;
         result
@@ -276,7 +280,7 @@ impl MOS6502 {
         let indirect_x_arg: u8 = self.read(indirect_x_addr);
         let indirect_y_arg: u8 = self.read(indirect_y_addr);
 
-        println!("Executing {:02x}", opcode);
+        println!("Executing 0x{:02x}", opcode);
         match opcode {
             // ADC
             0x69 => {
@@ -1073,7 +1077,7 @@ impl MOS6502 {
                 self.pc = self.pc.wrapping_add(1);
             }
 
-            _ => panic!("Invalid opcode: {:02x}", opcode),
+            _ => panic!("Invalid opcode: 0x{:02x}", opcode),
         }
     }
 }

@@ -1119,7 +1119,6 @@ impl MOS6502 {
             // TXS
             0x9a => {
                 self.s = self.x;
-                self.flag_updation(self.s);
                 self.pc = self.pc.wrapping_add(1);
             }
 

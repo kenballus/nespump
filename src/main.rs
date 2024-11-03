@@ -160,8 +160,8 @@ impl MOS6502 {
     }
 
     fn push16(&mut self, val: u16) {
-        self.push(val as u8);
         self.push((val >> 8) as u8);
+        self.push(val as u8);
     }
 
     fn pop(&mut self) -> u8 {

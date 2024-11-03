@@ -25,8 +25,7 @@ struct MOS6502 {
     // mirror_ppu_regs: [u8; 8 * 0x3ff],
     apu_and_io_regs: [u8; 0x18],
     // test_regs: [u8; 8],
-    cartridge_ram: [u8; 0x3fe0],
-    cartridge_rom: [u8; 0x8000],
+    cartridge: [u8; 0xbfe0],
 }
 
 enum Button {
@@ -57,8 +56,7 @@ impl Default for MOS6502 {
             ram: [0; 0x800],
             ppu_regs: [0, 0, 0b10100000, 0, 0, 0, 0, 0],
             apu_and_io_regs: [0; 0x18], // TODO
-            cartridge_ram: [0; 0x3fe0],
-            cartridge_rom: [0; 0x8000],
+            cartridge: [0; 0xbfe0],
         }
     }
 }
@@ -66,10 +64,66 @@ impl Default for MOS6502 {
 impl MOS6502 {
     fn new(rom_file: &mut File) -> Self {
         let mut result: Self = Default::default();
+
+        let mut magic: [u8; 4] = [0; 4];
         rom_file
-            .read(&mut result.cartridge_rom)
-            .expect("Couldn't read rom file");
-        result.pc = result.read16(result.read16(0xfffc));
+            .read_exact(&mut magic)
+            .expect("Couldn't read magic");
+        if magic != [0x4e, 0x45, 0x53, 0x1a] {
+            panic!("Invalid iNES magic");
+        }
+
+        let mut raw_prg_rom_size: [u8; 1] = [0];
+        rom_file
+            .read_exact(&mut raw_prg_rom_size)
+            .expect("Couldn't read PRG ROM size");
+        let prg_rom_size: u8 = raw_prg_rom_size[0];
+        println!("PRG ROM size: 0x{:02x} * 0x4000", prg_rom_size);
+
+        let mut raw_chr_rom_size: [u8; 1] = [0];
+        rom_file
+            .read_exact(&mut raw_chr_rom_size)
+            .expect("Couldn't read CHR ROM size");
+
+        let mut raw_flags_6: [u8; 1] = [0];
+        rom_file
+            .read_exact(&mut raw_flags_6)
+            .expect("Couldn't read flags 6");
+
+        let mut raw_flags_7: [u8; 1] = [0];
+        rom_file
+            .read_exact(&mut raw_flags_7)
+            .expect("Couldn't read flags 7");
+
+        let mut raw_flags_8: [u8; 1] = [0];
+        rom_file
+            .read_exact(&mut raw_flags_8)
+            .expect("Couldn't read flags 8");
+
+        let mut raw_flags_9: [u8; 1] = [0];
+        rom_file
+            .read_exact(&mut raw_flags_9)
+            .expect("Couldn't read flags 9");
+
+        let mut raw_flags_10: [u8; 1] = [0];
+        rom_file
+            .read_exact(&mut raw_flags_10)
+            .expect("Couldn't read flags 10");
+
+        let mut unused: [u8; 5] = [0; 5];
+        rom_file
+            .read_exact(&mut unused)
+            .expect("Couldn't read header padding");
+
+        let mut buf: [u8; 0x4000] = [0; 0x4000];
+        rom_file.read_exact(&mut buf).expect("Couldn't read ROM");
+        let mut i: u16 = 0xc000;
+        for byte in buf.iter() {
+            result.write(i, *byte);
+            i += 1;
+        }
+
+        result.pc = result.read16(0xfffc);
         result
     }
 
@@ -132,8 +186,7 @@ impl MOS6502 {
             0x0000..0x2000 => self.ram[(addr % 0x0800) as usize],
             0x2000..0x4000 => self.ppu_regs[(addr % 8) as usize],
             0x4000..0x4018 => self.apu_and_io_regs[(addr - 0x4000) as usize],
-            0x4020..0x8000 => self.cartridge_ram[(addr - 0x4020) as usize],
-            0x8000..=0xffff => self.cartridge_rom[(addr - 0x8000) as usize],
+            0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize],
             _ => panic!("Invalid memory read!"),
         }
     }
@@ -147,8 +200,7 @@ impl MOS6502 {
             0x0000..0x2000 => self.ram[(addr % 0x0800) as usize] = val,
             0x2000..0x4000 => self.ppu_regs[(addr % 8) as usize] = val,
             0x4000..0x4018 => self.apu_and_io_regs[(addr - 0x4000) as usize] = val,
-            0x4020..0x8000 => self.cartridge_ram[(addr - 0x4020) as usize] = val,
-            0x8000..=0xffff => self.cartridge_rom[(addr - 0x8000) as usize] = val,
+            0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize] = val,
             _ => panic!("Invalid memory write!"),
         }
     }
@@ -231,7 +283,7 @@ impl MOS6502 {
     }
 
     fn ror(&mut self, op: u8) -> u8 {
-        let result: u8 = ((op as u8) << 7) | (op >> 1);
+        let result: u8 = ((self.carry as u8) << 7) | (op >> 1);
         self.carry = (op & 1) != 0;
         result
     }

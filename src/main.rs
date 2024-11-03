@@ -264,7 +264,7 @@ impl MOS6502 {
     }
 
     fn inc(&mut self, val: u8) -> u8 {
-        let result: u8 = val.wrapping_sub(1);
+        let result: u8 = val.wrapping_add(1);
         self.flag_updation(result);
         result
     }

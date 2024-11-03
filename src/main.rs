@@ -128,14 +128,18 @@ impl MOS6502 {
     }
 
     fn dump_regs(&self) {
-        println!("A: {:02x} X: {:02x} Y: {:02x}", self.a, self.x, self.y);
-        println!("SP: {:04x} PC: {:04x}", self.s, self.pc);
+        println!(
+            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+            self.a,
+            self.x,
+            self.y,
+            self.get_flags_byte(false),
+            self.s
+        );
     }
 
     fn flag_updation(&mut self, val: u8) {
-        if val == 0 {
-            self.zero = true;
-        }
+        self.zero = val == 0;
         self.negative = (val >> 7) != 0;
     }
 
@@ -301,27 +305,31 @@ impl MOS6502 {
     }
 
     fn step(&mut self) {
+        // All 6502 instructions begin with a 1-byte opcode
         let opcode: u8 = self.read(self.pc);
 
+        // 2-byte instruction operand
         let imm16: u16 = self.read16(self.pc.wrapping_add(1));
 
-        let immediate_arg: u8 = self.read(self.pc.wrapping_add(1));
+        // 1-byte instruction operand
+        let imm8: u8 = self.read(self.pc.wrapping_add(1));
 
-        let zero_page_addr: u16 = immediate_arg as u16;
-        let zero_page_x_addr: u16 = (immediate_arg.wrapping_add(self.x)) as u16;
-        let zero_page_y_addr: u16 = (immediate_arg.wrapping_add(self.y)) as u16;
+        // The addresses of the operands of all addressing modes
+        let zero_page_addr: u16 = imm8 as u16;
+        let zero_page_x_addr: u16 = (imm8.wrapping_add(self.x)) as u16;
+        let zero_page_y_addr: u16 = (imm8.wrapping_add(self.y)) as u16;
         let absolute_addr: u16 = imm16;
         let absolute_x_addr: u16 = imm16.wrapping_add(self.x as u16);
         let absolute_y_addr: u16 = imm16.wrapping_add(self.y as u16);
         let indirect_addr: u16 = self.read16(absolute_addr);
         let indirect_x_addr: u16 =
-            ((self.read((immediate_arg.wrapping_add(self.x).wrapping_add(1)) as u16) as u16) << 8)
-                | (self.read((immediate_arg.wrapping_add(self.x)) as u16) as u16);
-        let indirect_y_addr: u16 = (((self.read((immediate_arg.wrapping_add(1)) as u16) as u16)
-            << 8)
-            | self.read(immediate_arg as u16) as u16)
+            ((self.read((imm8.wrapping_add(self.x).wrapping_add(1)) as u16) as u16) << 8)
+                | (self.read((imm8.wrapping_add(self.x)) as u16) as u16);
+        let indirect_y_addr: u16 = (((self.read((imm8.wrapping_add(1)) as u16) as u16) << 8)
+            | self.read(imm8 as u16) as u16)
             .wrapping_add(self.y as u16);
 
+        // The arguments for all addressing modes
         let zero_page_arg: u8 = self.read(zero_page_addr);
         let zero_page_x_arg: u8 = self.read(zero_page_x_addr);
         let zero_page_y_arg: u8 = self.read(zero_page_y_addr);
@@ -332,11 +340,12 @@ impl MOS6502 {
         let indirect_x_arg: u8 = self.read(indirect_x_addr);
         let indirect_y_arg: u8 = self.read(indirect_y_addr);
 
-        println!("Executing 0x{:02x}", opcode);
+        print!("{:04X} ", self.pc);
+        self.dump_regs();
         match opcode {
             // ADC
             0x69 => {
-                self.a = self.adc(immediate_arg);
+                self.a = self.adc(imm8);
                 self.pc = self.pc.wrapping_add(2);
             }
             0x65 => {
@@ -370,7 +379,7 @@ impl MOS6502 {
 
             // AND
             0x29 => {
-                self.a = self.and(immediate_arg);
+                self.a = self.and(imm8);
                 self.pc = self.pc.wrapping_add(2);
             }
             0x25 => {
@@ -430,32 +439,29 @@ impl MOS6502 {
 
             // BCC
             0x90 => {
-                if !self.carry {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(2)
-                        .wrapping_add(immediate_arg as i8 as u16);
-                }
+                self.pc = self.pc.wrapping_add(2).wrapping_add(if !self.carry {
+                    imm8 as i8 as u16
+                } else {
+                    0
+                })
             }
 
             // BCS
             0xB0 => {
-                if self.carry {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(2)
-                        .wrapping_add(immediate_arg as i8 as u16);
-                }
+                self.pc = self.pc.wrapping_add(2).wrapping_add(if self.carry {
+                    imm8 as i8 as u16
+                } else {
+                    0
+                })
             }
 
             // BEQ
             0xF0 => {
-                if self.zero {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(2)
-                        .wrapping_add(immediate_arg as i8 as u16);
-                }
+                self.pc = self.pc.wrapping_add(2).wrapping_add(if self.zero {
+                    imm8 as i8 as u16
+                } else {
+                    0
+                })
             }
 
             // BIT
@@ -470,32 +476,29 @@ impl MOS6502 {
 
             // BMI
             0x30 => {
-                if self.negative {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(2)
-                        .wrapping_add(immediate_arg as i8 as u16);
-                }
+                self.pc = self.pc.wrapping_add(2).wrapping_add(if self.negative {
+                    imm8 as i8 as u16
+                } else {
+                    0
+                })
             }
 
             // BNE
             0xd0 => {
-                if !self.zero {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(2)
-                        .wrapping_add(immediate_arg as i8 as u16);
-                }
+                self.pc = self.pc.wrapping_add(2).wrapping_add(if !self.zero {
+                    imm8 as i8 as u16
+                } else {
+                    0
+                })
             }
 
             // BPL
             0x10 => {
-                if !self.negative {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(2)
-                        .wrapping_add(immediate_arg as i8 as u16);
-                }
+                self.pc = self.pc.wrapping_add(2).wrapping_add(if !self.negative {
+                    imm8 as i8 as u16
+                } else {
+                    0
+                })
             }
 
             // BRK
@@ -508,22 +511,20 @@ impl MOS6502 {
 
             // BVC
             0x50 => {
-                if !self.overflow {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(2)
-                        .wrapping_add(immediate_arg as i8 as u16);
-                }
+                self.pc = self.pc.wrapping_add(2).wrapping_add(if !self.overflow {
+                    imm8 as i8 as u16
+                } else {
+                    0
+                })
             }
 
             // BVS
             0x70 => {
-                if self.overflow {
-                    self.pc = self
-                        .pc
-                        .wrapping_add(2)
-                        .wrapping_add(immediate_arg as i8 as u16);
-                }
+                self.pc = self.pc.wrapping_add(2).wrapping_add(if self.overflow {
+                    imm8 as i8 as u16
+                } else {
+                    0
+                })
             }
 
             // CLC
@@ -552,7 +553,7 @@ impl MOS6502 {
 
             // CMP
             0xc9 => {
-                self.cmp(self.a, immediate_arg);
+                self.cmp(self.a, imm8);
                 self.pc = self.pc.wrapping_add(2);
             }
             0xc5 => {
@@ -586,7 +587,7 @@ impl MOS6502 {
 
             // CPX
             0xe0 => {
-                self.cmp(self.x, immediate_arg);
+                self.cmp(self.x, imm8);
                 self.pc = self.pc.wrapping_add(2);
             }
             0xe4 => {
@@ -600,7 +601,7 @@ impl MOS6502 {
 
             // CPY
             0xc0 => {
-                self.cmp(self.y, immediate_arg);
+                self.cmp(self.y, imm8);
                 self.pc = self.pc.wrapping_add(2);
             }
             0xc4 => {
@@ -648,7 +649,7 @@ impl MOS6502 {
 
             // EOR
             0x49 => {
-                self.a = self.eor(immediate_arg);
+                self.a = self.eor(imm8);
                 self.pc = self.pc.wrapping_add(2);
             }
             0x45 => {
@@ -730,7 +731,7 @@ impl MOS6502 {
 
             // LDA
             0xa9 => {
-                self.a = immediate_arg;
+                self.a = imm8;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(2);
             }
@@ -772,7 +773,7 @@ impl MOS6502 {
 
             // LDX
             0xa2 => {
-                self.x = immediate_arg;
+                self.x = imm8;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(2);
             }
@@ -799,7 +800,7 @@ impl MOS6502 {
 
             // LDY
             0xa0 => {
-                self.y = immediate_arg;
+                self.y = imm8;
                 self.flag_updation(self.y);
                 self.pc = self.pc.wrapping_add(2);
             }
@@ -857,7 +858,7 @@ impl MOS6502 {
 
             // ORA
             0x09 => {
-                self.a = self.ora(immediate_arg);
+                self.a = self.ora(imm8);
                 self.pc = self.pc.wrapping_add(2);
             }
             0x05 => {
@@ -979,7 +980,7 @@ impl MOS6502 {
 
             // SBC
             0xe9 => {
-                self.a = self.sbc(immediate_arg);
+                self.a = self.sbc(imm8);
                 self.pc = self.pc.wrapping_add(2);
             }
             0xe5 => {
@@ -1164,8 +1165,6 @@ fn main() {
     canvas.present();
     let mut event_pump = sdl_context.event_pump().expect("Couldn't make event pump");
 
-    println!("Started up!");
-    cpu.dump_regs();
     'gameloop: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -1206,7 +1205,6 @@ fn main() {
             }
         }
         cpu.step();
-        cpu.dump_regs();
         canvas.present();
     }
 }

@@ -323,7 +323,11 @@ impl MOS6502 {
         let absolute_addr: u16 = imm16;
         let absolute_x_addr: u16 = imm16.wrapping_add(self.x as u16);
         let absolute_y_addr: u16 = imm16.wrapping_add(self.y as u16);
-        let indirect_addr: u16 = ((self.read(((absolute_addr & 0xff00) | ((absolute_addr as u8).wrapping_add(1) as u16)) as u16) as u16) << 8) | ((self.read(absolute_addr) as u16) as u16);
+        let indirect_addr: u16 = ((self
+            .read((absolute_addr & 0xff00) | ((absolute_addr as u8).wrapping_add(1) as u16))
+            as u16)
+            << 8)
+            | (self.read(absolute_addr) as u16);
         let indirect_x_addr: u16 =
             ((self.read((imm8.wrapping_add(self.x).wrapping_add(1)) as u16) as u16) << 8)
                 | (self.read((imm8.wrapping_add(self.x)) as u16) as u16);

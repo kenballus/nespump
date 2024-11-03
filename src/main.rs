@@ -170,7 +170,9 @@ impl MOS6502 {
     }
 
     fn pop16(&mut self) -> u16 {
-        ((self.pop() as u16) << 8) | self.pop() as u16
+        let low_bits: u8 = self.pop();
+        let high_bits: u8 = self.pop();
+        ((high_bits as u16) << 8) | (low_bits as u16)
     }
 
     fn pop_flags(&mut self) {

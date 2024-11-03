@@ -338,7 +338,6 @@ impl MOS6502 {
         let absolute_arg: u8 = self.read(absolute_addr);
         let absolute_x_arg: u8 = self.read(absolute_x_addr);
         let absolute_y_arg: u8 = self.read(absolute_y_addr);
-        let indirect_arg: u16 = self.read16(indirect_addr);
         let indirect_x_arg: u8 = self.read(indirect_x_addr);
         let indirect_y_arg: u8 = self.read(indirect_y_addr);
 
@@ -722,7 +721,7 @@ impl MOS6502 {
                 self.pc = absolute_addr;
             }
             0x6c => {
-                self.pc = indirect_arg;
+                self.pc = indirect_addr;
             }
 
             // JSR

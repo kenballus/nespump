@@ -55,7 +55,7 @@ impl Default for MOS6502 {
             decimal_mode: false,
             overflow: false,
             negative: false,
-            cycles: 0,
+            cycles: 7,
             ram: [0; 0x800],
             ppu_regs: [0, 0, 0b10100000, 0, 0, 0, 0, 0],
             apu_and_io_regs: [0; 0x18], // TODO
@@ -132,12 +132,13 @@ impl MOS6502 {
 
     fn dump_regs(&self) {
         println!(
-            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{}",
             self.a,
             self.x,
             self.y,
             self.get_flags_byte(false),
-            self.s
+            self.s,
+            self.cycles
         );
     }
 

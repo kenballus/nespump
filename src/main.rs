@@ -473,7 +473,8 @@ impl MOS6502 {
                     imm8 as i8 as u16
                 } else {
                     0
-                })
+                });
+                self.cycles += 0;
             }
 
             // BCS
@@ -482,7 +483,8 @@ impl MOS6502 {
                     imm8 as i8 as u16
                 } else {
                     0
-                })
+                });
+                self.cycles += 0;
             }
 
             // BEQ
@@ -491,17 +493,20 @@ impl MOS6502 {
                     imm8 as i8 as u16
                 } else {
                     0
-                })
+                });
+                self.cycles += 0;
             }
 
             // BIT
             0x24 => {
                 self.bit(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0x2c => {
                 self.bit(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
 
             // BMI
@@ -510,7 +515,8 @@ impl MOS6502 {
                     imm8 as i8 as u16
                 } else {
                     0
-                })
+                });
+                self.cycles += 0;
             }
 
             // BNE
@@ -519,7 +525,8 @@ impl MOS6502 {
                     imm8 as i8 as u16
                 } else {
                     0
-                })
+                });
+                self.cycles += 0;
             }
 
             // BPL
@@ -528,7 +535,8 @@ impl MOS6502 {
                     imm8 as i8 as u16
                 } else {
                     0
-                })
+                });
+                self.cycles += 0;
             }
 
             // BRK
@@ -537,6 +545,7 @@ impl MOS6502 {
                 self.push(self.get_flags_byte(true));
                 self.pc = self.read16(0xfffe);
                 self.interrupt_disable = true;
+                self.cycles += 7;
             }
 
             // BVC
@@ -545,7 +554,8 @@ impl MOS6502 {
                     imm8 as i8 as u16
                 } else {
                     0
-                })
+                });
+                self.cycles += 0;
             }
 
             // BVS
@@ -554,31 +564,36 @@ impl MOS6502 {
                     imm8 as i8 as u16
                 } else {
                     0
-                })
+                });
+                self.cycles += 0;
             }
 
             // CLC
             0x18 => {
                 self.carry = false;
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // CLD
             0xd8 => {
                 self.decimal_mode = false;
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // CLI
             0x58 => {
                 self.interrupt_disable = false;
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // CLV
             0xb8 => {
                 self.overflow = false;
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // CMP

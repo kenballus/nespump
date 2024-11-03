@@ -295,11 +295,9 @@ impl MOS6502 {
     }
 
     fn sbc(&mut self, op: u8) -> u8 {
-        let result_16: u16 = (self.a as u16)
-            .wrapping_add(!op as i8 as u16)
-            .wrapping_add(self.carry as u16);
+        let result_16: i16 = (self.a as i16) - (op as i16) - (!self.carry as i16);
         let result: u8 = result_16 as u8;
-        self.carry = result_16 > 255;
+        self.carry = result_16 >= 0;
         self.overflow = (is_negative(result) != is_negative(self.a))
             && (is_negative(result) == is_negative(op));
         self.flag_updation(result);

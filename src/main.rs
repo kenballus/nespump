@@ -619,28 +619,34 @@ impl MOS6502 {
             0xe0 => {
                 self.cmp(self.x, imm8);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0xe4 => {
                 self.cmp(self.x, zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0xec => {
                 self.cmp(self.x, absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
 
             // CPY
             0xc0 => {
                 self.cmp(self.y, imm8);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0xc4 => {
                 self.cmp(self.y, zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0xcc => {
                 self.cmp(self.y, absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
 
             // DEC
@@ -648,67 +654,81 @@ impl MOS6502 {
                 let result: u8 = self.dec(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 5;
             }
             0xd6 => {
                 let result: u8 = self.dec(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0xce => {
                 let result: u8 = self.dec(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 6;
             }
             0xde => {
                 let result: u8 = self.dec(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 7;
             }
 
             // DEX
             0xca => {
                 self.x = self.dec(self.x);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // DEY
             0x88 => {
                 self.y = self.dec(self.y);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // EOR
             0x49 => {
                 self.a = self.eor(imm8);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0x45 => {
                 self.a = self.eor(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0x55 => {
                 self.a = self.eor(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 4;
             }
             0x4d => {
                 self.a = self.eor(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
             0x5d => {
                 self.a = self.eor(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0x59 => {
                 self.a = self.eor(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0x41 => {
                 self.a = self.eor(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0x51 => {
                 self.a = self.eor(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 0;
             }
 
             // INC
@@ -716,47 +736,56 @@ impl MOS6502 {
                 let result: u8 = self.inc(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 5;
             }
             0xf6 => {
                 let result: u8 = self.inc(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0xee => {
                 let result: u8 = self.inc(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 6;
             }
             0xfe => {
                 let result: u8 = self.inc(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 7;
             }
 
             // INX
             0xe8 => {
                 self.x = self.inc(self.x);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // INY
             0xc8 => {
                 self.y = self.inc(self.y);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // JMP
             0x4c => {
                 self.pc = absolute_addr;
+                self.cycles += 3;
             }
             0x6c => {
                 self.pc = indirect_addr;
+                self.cycles += 5;
             }
 
             // JSR
             0x20 => {
                 self.push16(self.pc.wrapping_add(2));
                 self.pc = absolute_addr;
+                self.cycles += 6;
             }
 
             // LDA
@@ -764,41 +793,49 @@ impl MOS6502 {
                 self.a = imm8;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0xa5 => {
                 self.a = zero_page_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0xb5 => {
                 self.a = zero_page_x_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 4;
             }
             0xad => {
                 self.a = absolute_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
             0xbd => {
                 self.a = absolute_x_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0xb9 => {
                 self.a = absolute_y_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0xa1 => {
                 self.a = indirect_x_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0xb1 => {
                 self.a = indirect_y_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 0;
             }
 
             // LDX
@@ -806,26 +843,31 @@ impl MOS6502 {
                 self.x = imm8;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0xa6 => {
                 self.x = zero_page_arg;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0xb6 => {
                 self.x = zero_page_y_arg;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 4;
             }
             0xae => {
                 self.x = absolute_arg;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
             0xbe => {
                 self.x = absolute_y_arg;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 5;
             }
 
             // LDY
@@ -833,91 +875,110 @@ impl MOS6502 {
                 self.y = imm8;
                 self.flag_updation(self.y);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0xa4 => {
                 self.y = zero_page_arg;
                 self.flag_updation(self.y);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0xb4 => {
                 self.y = zero_page_x_arg;
                 self.flag_updation(self.y);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 4;
             }
             0xac => {
                 self.y = absolute_arg;
                 self.flag_updation(self.y);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
             0xbc => {
                 self.y = absolute_x_arg;
                 self.flag_updation(self.y);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
 
             // LSR
             0x4a => {
                 self.a = self.lsr(self.a);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
             0x46 => {
                 let result: u8 = self.lsr(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 5;
             }
             0x56 => {
                 let result: u8 = self.lsr(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0x4e => {
                 let result: u8 = self.lsr(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 6;
             }
             0x5e => {
                 let result: u8 = self.lsr(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 7;
             }
 
             // NOP
             0xea => {
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
 
             // ORA
             0x09 => {
                 self.a = self.ora(imm8);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0x05 => {
                 self.a = self.ora(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0x15 => {
                 self.a = self.ora(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 4;
             }
             0x0d => {
                 self.a = self.ora(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
             0x1d => {
                 self.a = self.ora(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0x19 => {
                 self.a = self.ora(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0x01 => {
                 self.a = self.ora(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0x11 => {
                 self.a = self.ora(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 0;
             }
 
             // PHA

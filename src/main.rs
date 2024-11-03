@@ -310,6 +310,17 @@ impl MOS6502 {
         result
     }
 
+    fn branch(&mut self, cond: bool, op: u8) {
+        self.pc = self.pc.wrapping_add(2);
+        let mut new_pc = self.pc;
+        if cond {
+            new_pc = self.pc.wrapping_add(op as i8 as u16);
+        }
+        self.cycles +=
+            2 + (cond as u64) + ((cond as u64) * ((new_pc & 0xff00 != self.pc & 0xff00) as u64));
+        self.pc = new_pc;
+    }
+
     fn step(&mut self) {
         // All 6502 instructions begin with a 1-byte opcode
         let opcode: u8 = self.read(self.pc);
@@ -335,9 +346,14 @@ impl MOS6502 {
         let indirect_x_addr: u16 =
             ((self.read((imm8.wrapping_add(self.x).wrapping_add(1)) as u16) as u16) << 8)
                 | (self.read((imm8.wrapping_add(self.x)) as u16) as u16);
-        let indirect_y_addr: u16 = (((self.read((imm8.wrapping_add(1)) as u16) as u16) << 8)
-            | self.read(imm8 as u16) as u16)
-            .wrapping_add(self.y as u16);
+
+        let indirect_y_base: u16 = ((self.read((imm8.wrapping_add(1)) as u16) as u16) << 8)
+            | self.read(imm8 as u16) as u16;
+        let indirect_y_addr: u16 = indirect_y_base.wrapping_add(self.y as u16);
+
+        let absolute_x_crossed_page: bool = absolute_x_addr & 0xff00 != imm16 & 0xff00;
+        let absolute_y_crossed_page: bool = absolute_y_addr & 0xff00 != imm16 & 0xff00;
+        let indirect_y_crossed_page: bool = indirect_y_addr & 0xff00 != indirect_y_base & 0xff00;
 
         // The arguments for all addressing modes
         let zero_page_arg: u8 = self.read(zero_page_addr);
@@ -376,12 +392,12 @@ impl MOS6502 {
             0x7d => {
                 self.a = self.adc(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0x79 => {
                 self.a = self.adc(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0x61 => {
                 self.a = self.adc(indirect_x_arg);
@@ -391,7 +407,7 @@ impl MOS6502 {
             0x71 => {
                 self.a = self.adc(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
-                self.cycles += 0;
+                self.cycles += 5 + (indirect_y_crossed_page as u64);
             }
 
             // AND
@@ -418,12 +434,12 @@ impl MOS6502 {
             0x3d => {
                 self.a = self.and(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0x39 => {
                 self.a = self.and(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0x21 => {
                 self.a = self.and(indirect_x_arg);
@@ -433,7 +449,7 @@ impl MOS6502 {
             0x31 => {
                 self.a = self.and(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
-                self.cycles += 0;
+                self.cycles += 5 + (indirect_y_crossed_page as u64);
             }
 
             // ASL
@@ -469,32 +485,17 @@ impl MOS6502 {
 
             // BCC
             0x90 => {
-                self.pc = self.pc.wrapping_add(2).wrapping_add(if !self.carry {
-                    imm8 as i8 as u16
-                } else {
-                    0
-                });
-                self.cycles += 0;
+                self.branch(!self.carry, imm8);
             }
 
             // BCS
             0xB0 => {
-                self.pc = self.pc.wrapping_add(2).wrapping_add(if self.carry {
-                    imm8 as i8 as u16
-                } else {
-                    0
-                });
-                self.cycles += 0;
+                self.branch(self.carry, imm8);
             }
 
             // BEQ
             0xF0 => {
-                self.pc = self.pc.wrapping_add(2).wrapping_add(if self.zero {
-                    imm8 as i8 as u16
-                } else {
-                    0
-                });
-                self.cycles += 0;
+                self.branch(self.zero, imm8);
             }
 
             // BIT
@@ -511,32 +512,17 @@ impl MOS6502 {
 
             // BMI
             0x30 => {
-                self.pc = self.pc.wrapping_add(2).wrapping_add(if self.negative {
-                    imm8 as i8 as u16
-                } else {
-                    0
-                });
-                self.cycles += 0;
+                self.branch(self.negative, imm8);
             }
 
             // BNE
             0xd0 => {
-                self.pc = self.pc.wrapping_add(2).wrapping_add(if !self.zero {
-                    imm8 as i8 as u16
-                } else {
-                    0
-                });
-                self.cycles += 0;
+                self.branch(!self.zero, imm8);
             }
 
             // BPL
             0x10 => {
-                self.pc = self.pc.wrapping_add(2).wrapping_add(if !self.negative {
-                    imm8 as i8 as u16
-                } else {
-                    0
-                });
-                self.cycles += 0;
+                self.branch(!self.negative, imm8);
             }
 
             // BRK
@@ -550,22 +536,12 @@ impl MOS6502 {
 
             // BVC
             0x50 => {
-                self.pc = self.pc.wrapping_add(2).wrapping_add(if !self.overflow {
-                    imm8 as i8 as u16
-                } else {
-                    0
-                });
-                self.cycles += 0;
+                self.branch(!self.overflow, imm8);
             }
 
             // BVS
             0x70 => {
-                self.pc = self.pc.wrapping_add(2).wrapping_add(if self.overflow {
-                    imm8 as i8 as u16
-                } else {
-                    0
-                });
-                self.cycles += 0;
+                self.branch(self.overflow, imm8);
             }
 
             // CLC
@@ -600,34 +576,42 @@ impl MOS6502 {
             0xc9 => {
                 self.cmp(self.a, imm8);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0xc5 => {
                 self.cmp(self.a, zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0xd5 => {
                 self.cmp(self.a, zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 4;
             }
             0xcd => {
                 self.cmp(self.a, absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
             0xdd => {
                 self.cmp(self.a, absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0xd9 => {
                 self.cmp(self.a, absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0xc1 => {
                 self.cmp(self.a, indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0xd1 => {
                 self.cmp(self.a, indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 5 + (indirect_y_crossed_page as u64);
             }
 
             // CPX
@@ -728,12 +712,12 @@ impl MOS6502 {
             0x5d => {
                 self.a = self.eor(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0x59 => {
                 self.a = self.eor(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0x41 => {
                 self.a = self.eor(indirect_x_arg);
@@ -743,7 +727,7 @@ impl MOS6502 {
             0x51 => {
                 self.a = self.eor(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
-                self.cycles += 0;
+                self.cycles += 5 + (indirect_y_crossed_page as u64);
             }
 
             // INC
@@ -832,13 +816,13 @@ impl MOS6502 {
                 self.a = absolute_x_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0xb9 => {
                 self.a = absolute_y_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0xa1 => {
                 self.a = indirect_x_arg;
@@ -850,7 +834,7 @@ impl MOS6502 {
                 self.a = indirect_y_arg;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(2);
-                self.cycles += 0;
+                self.cycles += 5 + (indirect_y_crossed_page as u64);
             }
 
             // LDX
@@ -882,7 +866,7 @@ impl MOS6502 {
                 self.x = absolute_y_arg;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 5;
+                self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
 
             // LDY
@@ -914,7 +898,7 @@ impl MOS6502 {
                 self.y = absolute_x_arg;
                 self.flag_updation(self.y);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
 
             // LSR
@@ -978,12 +962,12 @@ impl MOS6502 {
             0x1d => {
                 self.a = self.ora(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0x19 => {
                 self.a = self.ora(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0x01 => {
                 self.a = self.ora(indirect_x_arg);
@@ -993,7 +977,7 @@ impl MOS6502 {
             0x11 => {
                 self.a = self.ora(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
-                self.cycles += 0;
+                self.cycles += 5 + (indirect_y_crossed_page as u64);
             }
 
             // PHA
@@ -1124,12 +1108,12 @@ impl MOS6502 {
             0xfd => {
                 self.a = self.sbc(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0xf9 => {
                 self.a = self.sbc(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
-                self.cycles += 0;
+                self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0xe1 => {
                 self.a = self.sbc(indirect_x_arg);
@@ -1139,7 +1123,7 @@ impl MOS6502 {
             0xf1 => {
                 self.a = self.sbc(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
-                self.cycles += 0;
+                self.cycles += 5 + (indirect_y_crossed_page as u64);
             }
 
             // SEC

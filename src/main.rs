@@ -285,12 +285,14 @@ impl MOS6502 {
     fn rol(&mut self, op: u8) -> u8 {
         let result: u8 = (op << 1) | (self.carry as u8);
         self.carry = is_negative(op);
+        self.flag_updation(result);
         result
     }
 
     fn ror(&mut self, op: u8) -> u8 {
         let result: u8 = ((self.carry as u8) << 7) | (op >> 1);
         self.carry = (op & 1) != 0;
+        self.flag_updation(result);
         result
     }
 

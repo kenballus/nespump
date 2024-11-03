@@ -248,7 +248,7 @@ impl MOS6502 {
 
     fn cmp(&mut self, op1: u8, op2: u8) {
         self.carry = op1 >= op2;
-        self.flag_updation(op2.wrapping_sub(op1));
+        self.flag_updation(op1.wrapping_sub(op2));
     }
 
     fn dec(&mut self, val: u8) -> u8 {
@@ -906,8 +906,8 @@ impl MOS6502 {
 
             // PLA
             0x68 => {
-                let result: u8 = self.pop();
-                self.flag_updation(result);
+                self.a = self.pop();
+                self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(1);
             }
 

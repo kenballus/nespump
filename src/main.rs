@@ -19,6 +19,8 @@ struct MOS6502 {
     overflow: bool,
     negative: bool,
 
+    cycles: u64
+
     ram: [u8; 0x800],
     // mirror_ram: [u8; 0x800 * 3],
     ppu_regs: [u8; 8],
@@ -53,6 +55,7 @@ impl Default for MOS6502 {
             decimal_mode: false,
             overflow: false,
             negative: false,
+            cycles: 0,
             ram: [0; 0x800],
             ppu_regs: [0, 0, 0b10100000, 0, 0, 0, 0, 0],
             apu_and_io_regs: [0; 0x18], // TODO
@@ -323,7 +326,11 @@ impl MOS6502 {
         let absolute_addr: u16 = imm16;
         let absolute_x_addr: u16 = imm16.wrapping_add(self.x as u16);
         let absolute_y_addr: u16 = imm16.wrapping_add(self.y as u16);
-        let indirect_addr: u16 = self.read16(absolute_addr);
+        let indirect_addr: u16 = ((self
+            .read((absolute_addr & 0xff00) | ((absolute_addr as u8).wrapping_add(1) as u16))
+            as u16)
+            << 8)
+            | (self.read(absolute_addr) as u16);
         let indirect_x_addr: u16 =
             ((self.read((imm8.wrapping_add(self.x).wrapping_add(1)) as u16) as u16) << 8)
                 | (self.read((imm8.wrapping_add(self.x)) as u16) as u16);
@@ -348,94 +355,115 @@ impl MOS6502 {
             0x69 => {
                 self.a = self.adc(imm8);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0x65 => {
                 self.a = self.adc(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0x75 => {
                 self.a = self.adc(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 4;
             }
             0x6d => {
                 self.a = self.adc(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
             0x7d => {
                 self.a = self.adc(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0x79 => {
                 self.a = self.adc(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0x61 => {
                 self.a = self.adc(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0x71 => {
                 self.a = self.adc(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 0;
             }
 
             // AND
             0x29 => {
                 self.a = self.and(imm8);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 2;
             }
             0x25 => {
                 self.a = self.and(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 3;
             }
             0x35 => {
                 self.a = self.and(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 4;
             }
             0x2d => {
                 self.a = self.and(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 4;
             }
             0x3d => {
                 self.a = self.and(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0x39 => {
                 self.a = self.and(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 0;
             }
             0x21 => {
                 self.a = self.and(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0x31 => {
                 self.a = self.and(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 0;
             }
 
             // ASL
             0x0a => {
                 self.a = self.asl(self.a);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycles += 2;
             }
             0x06 => {
                 let result: u8 = self.asl(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 5;
             }
             0x16 => {
                 let result: u8 = self.asl(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycles += 6;
             }
             0x0e => {
                 let result: u8 = self.asl(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 6;
             }
             0x1e => {
                 let result: u8 = self.asl(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycles += 7;
             }
 
             // BCC

@@ -924,12 +924,14 @@ impl MOS6502 {
             0x48 => {
                 self.push(self.a);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 3;
             }
 
             // PHP
             0x08 => {
                 self.push(self.get_flags_byte(true));
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 3;
             }
 
             // PLA
@@ -937,185 +939,223 @@ impl MOS6502 {
                 self.a = self.pop();
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 4;
             }
 
             // PLP
             0x28 => {
                 self.pop_flags();
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 4;
             }
 
             // ROL
             0x2a => {
                 self.a = self.rol(self.a);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
             0x26 => {
                 let result: u8 = self.rol(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 5;
             }
             0x36 => {
                 let result: u8 = self.rol(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 6;
             }
             0x2e => {
                 let result: u8 = self.rol(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 6;
             }
             0x3e => {
                 let result: u8 = self.rol(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 7;
             }
 
             // ROR
             0x6a => {
                 self.a = self.ror(self.a);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
             0x66 => {
                 let result: u8 = self.ror(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 5;
             }
             0x76 => {
                 let result: u8 = self.ror(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 6;
             }
             0x6e => {
                 let result: u8 = self.ror(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 6;
             }
             0x7e => {
                 let result: u8 = self.ror(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 7;
             }
 
             // RTI
             0x40 => {
                 self.pop_flags();
                 self.pc = self.pop16();
+                self.cycle += 6;
             }
 
             // RTS
             0x60 => {
                 self.pc = self.pop16().wrapping_add(1);
+                self.cycle += 6;
             }
 
             // SBC
             0xe9 => {
                 self.a = self.sbc(imm8);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 2;
             }
             0xe5 => {
                 self.a = self.sbc(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 3;
             }
             0xf5 => {
                 self.a = self.sbc(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 4;
             }
             0xed => {
                 self.a = self.sbc(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 4;
             }
             0xfd => {
                 self.a = self.sbc(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 0;
             }
             0xf9 => {
                 self.a = self.sbc(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 0;
             }
             0xe1 => {
                 self.a = self.sbc(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 6;
             }
             0xf1 => {
                 self.a = self.sbc(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 0;
             }
 
             // SEC
             0x38 => {
                 self.carry = true;
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             // SED
             0xf8 => {
                 self.decimal_mode = true;
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             // SEI
             0x78 => {
                 self.interrupt_disable = true;
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             // STA
             0x85 => {
                 self.write(zero_page_addr, self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 3;
             }
             0x95 => {
                 self.write(zero_page_x_addr, self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 4;
             }
             0x8d => {
                 self.write(absolute_addr, self.a);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 4;
             }
             0x9d => {
                 self.write(absolute_x_addr, self.a);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 5;
             }
             0x99 => {
                 self.write(absolute_y_addr, self.a);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 5;
             }
             0x81 => {
                 self.write(indirect_x_addr, self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 6;
             }
             0x91 => {
                 self.write(indirect_y_addr, self.a);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 6;
             }
 
             // STX
             0x86 => {
                 self.write(zero_page_addr, self.x);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 3;
             }
             0x96 => {
                 self.write(zero_page_y_addr, self.x);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 4;
             }
             0x8e => {
                 self.write(absolute_addr, self.x);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 4;
             }
 
             // STY
             0x84 => {
                 self.write(zero_page_addr, self.y);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 3;
             }
             0x94 => {
                 self.write(zero_page_x_addr, self.y);
                 self.pc = self.pc.wrapping_add(2);
+                self.cycle += 4;
             }
             0x8c => {
                 self.write(absolute_addr, self.y);
                 self.pc = self.pc.wrapping_add(3);
+                self.cycle += 4;
             }
 
             // TAX
@@ -1123,6 +1163,7 @@ impl MOS6502 {
                 self.x = self.a;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             // TAY
@@ -1130,6 +1171,7 @@ impl MOS6502 {
                 self.y = self.a;
                 self.flag_updation(self.y);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             // TSX
@@ -1137,6 +1179,7 @@ impl MOS6502 {
                 self.x = self.s;
                 self.flag_updation(self.x);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             // TXA
@@ -1144,12 +1187,14 @@ impl MOS6502 {
                 self.a = self.x;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             // TXS
             0x9a => {
                 self.s = self.x;
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             // TYA
@@ -1157,6 +1202,7 @@ impl MOS6502 {
                 self.a = self.y;
                 self.flag_updation(self.a);
                 self.pc = self.pc.wrapping_add(1);
+                self.cycle += 2;
             }
 
             _ => panic!("Invalid opcode: 0x{:02x}", opcode),

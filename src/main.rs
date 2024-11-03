@@ -78,7 +78,6 @@ impl MOS6502 {
             .read_exact(&mut raw_prg_rom_size)
             .expect("Couldn't read PRG ROM size");
         let prg_rom_size: u8 = raw_prg_rom_size[0];
-        println!("PRG ROM size: 0x{:02x} * 0x4000", prg_rom_size);
 
         let mut raw_chr_rom_size: [u8; 1] = [0];
         rom_file
@@ -115,15 +114,16 @@ impl MOS6502 {
             .read_exact(&mut unused)
             .expect("Couldn't read header padding");
 
-        let mut buf: [u8; 0x4000] = [0; 0x4000];
-        rom_file.read_exact(&mut buf).expect("Couldn't read ROM");
-        let mut i: u16 = 0xc000;
-        for byte in buf.iter() {
-            result.write(i, *byte);
-            i += 1;
+        for prg_rom_no in 0..prg_rom_size {
+            let mut buf: [u8; 0x4000] = [0; 0x4000];
+            rom_file.read_exact(&mut buf).expect("Couldn't read ROM");
+            let base_addr: u16 = 0xc000 - (prg_rom_no as u16) * 0x4000;
+            for (i, byte_ref) in buf.iter().enumerate() {
+                result.write(base_addr + (i as u16), *byte_ref);
+            }
         }
 
-        result.pc = result.read16(0xfffc);
+        result.pc = result.read16(0xfffc).wrapping_sub(4);
         result
     }
 
@@ -192,7 +192,7 @@ impl MOS6502 {
     }
 
     fn read16(&self, addr: u16) -> u16 {
-        ((self.read(addr) as u16) << 8) | (self.read(addr.wrapping_add(1)) as u16)
+        ((self.read(addr.wrapping_add(1)) as u16) << 8) | (self.read(addr) as u16)
     }
 
     fn write(&mut self, addr: u16, val: u8) {

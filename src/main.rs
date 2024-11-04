@@ -66,7 +66,7 @@ impl Default for MOS6502 {
             decimal_mode: false,
             overflow: false,
             negative: false,
-            cycles: 7,
+            cycles: 0,
             ram: [0; 0x800],
             ppu_regs: [0, 0, 0b10100000, 0, 0, 0, 0, 0],
             apu_and_io_regs: [0; 0x18], // TODO
@@ -154,7 +154,7 @@ impl MOS6502 {
             .read_exact(&mut unused)
             .expect("Couldn't read header padding");
 
-        if prg_rom_size != 1 {
+        if prg_rom_size > 2 {
             panic!("iNES parser doesn't yet support larger PRG ROMs");
         }
         for prg_rom_no in 0..prg_rom_size {
@@ -163,7 +163,12 @@ impl MOS6502 {
                 .read_exact(&mut buf)
                 .expect("Couldn't read PRG ROM");
             for (i, byte_ref) in buf.iter().enumerate() {
-                result.write(0xc000 - prg_rom_no * 0x4000 + i as u16, *byte_ref);
+                result.write(
+                    (if prg_rom_size == 2 { 0x8000 } else { 0xc000 })
+                        + prg_rom_no * 0x4000
+                        + i as u16,
+                    *byte_ref,
+                );
             }
         }
 
@@ -180,7 +185,7 @@ impl MOS6502 {
             }
         }
 
-        result.pc = result.read16(RESET_VECTOR).wrapping_sub(4);
+        result.pc = result.read16(RESET_VECTOR);
         result
     }
 
@@ -202,17 +207,18 @@ impl MOS6502 {
 
     fn dump_regs(&self) {
         println!(
-            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{}",
+            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} PPUADDR: {:04X} CYC:{}",
             self.a,
             self.x,
             self.y,
             self.get_flags_byte(false),
             self.s,
+            self.ppuaddr,
             self.cycles
         );
     }
 
-    fn flag_updation(&mut self, val: u8) {
+    fn update_nz_flags(&mut self, val: u8) {
         self.zero = val == 0;
         self.negative = (val >> 7) != 0;
     }
@@ -262,6 +268,7 @@ impl MOS6502 {
     fn key_down(&mut self, _b: Button) {}
 
     fn read(&mut self, addr: u16) -> u8 {
+        // This function needs `&mut self` because reading from PPUSTATUS resets the w register.
         match addr {
             0x0000..0x2000 => self.ram[(addr % 0x0800) as usize],
             0x2000..0x4000 => match addr % 8 {
@@ -286,8 +293,8 @@ impl MOS6502 {
                 _ => self.ppu_regs[(addr % 8) as usize],
             },
             0x4000..0x4018 => self.apu_and_io_regs[(addr - 0x4000) as usize],
+            0x4018..0x4020 => 0,
             0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize],
-            _ => panic!("Invalid memory read!"),
         }
     }
 
@@ -305,8 +312,9 @@ impl MOS6502 {
                     self.write(OAMADDR, oam_addr.wrapping_add(1));
                 }
                 PPUADDR_I => {
-                    self.ppuaddr &= if self.w { 0x00ff } else { 0xff00 };
+                    self.ppuaddr &= if self.w { 0xff00 } else { 0x00ff };
                     self.ppuaddr |= (val as u16) << (if self.w { 0 } else { 8 });
+                    self.w = !self.w;
                 }
                 PPUSCROLL_I => {
                     if self.w {
@@ -314,6 +322,7 @@ impl MOS6502 {
                     } else {
                         self.internal_x_scroll = val;
                     }
+                    self.w = !self.w;
                 }
                 PPUDATA_I => {
                     self.ppu_write(self.ppuaddr, val);
@@ -336,8 +345,8 @@ impl MOS6502 {
                 }
                 _ => self.apu_and_io_regs[(addr - 0x4000) as usize] = val,
             },
+            0x4018..0x4020 => {}
             0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize] = val,
-            _ => panic!("Invalid memory write!"),
         }
     }
 
@@ -358,20 +367,20 @@ impl MOS6502 {
         self.carry = result_16 > 255;
         self.overflow =
             (is_negative(self.a) == is_negative(op)) && (is_negative(result) != is_negative(op));
-        self.flag_updation(result);
+        self.update_nz_flags(result);
 
         result
     }
 
     fn and(&mut self, op: u8) -> u8 {
         let result: u8 = self.a & op;
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         result
     }
 
     fn asl(&mut self, op: u8) -> u8 {
         let result: u8 = op << 1;
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         self.carry = is_negative(op);
         result
     }
@@ -386,51 +395,51 @@ impl MOS6502 {
 
     fn cmp(&mut self, op1: u8, op2: u8) {
         self.carry = op1 >= op2;
-        self.flag_updation(op1.wrapping_sub(op2));
+        self.update_nz_flags(op1.wrapping_sub(op2));
     }
 
     fn dec(&mut self, val: u8) -> u8 {
         let result: u8 = val.wrapping_sub(1);
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         result
     }
 
     fn eor(&mut self, op: u8) -> u8 {
         let result: u8 = self.a ^ op;
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         result
     }
 
     fn inc(&mut self, val: u8) -> u8 {
         let result: u8 = val.wrapping_add(1);
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         result
     }
 
     fn lsr(&mut self, op: u8) -> u8 {
         let result: u8 = op >> 1;
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         self.carry = (op & 1) != 0;
         result
     }
 
     fn ora(&mut self, op: u8) -> u8 {
         let result: u8 = self.a | op;
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         result
     }
 
     fn rol(&mut self, op: u8) -> u8 {
         let result: u8 = (op << 1) | (self.carry as u8);
         self.carry = is_negative(op);
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         result
     }
 
     fn ror(&mut self, op: u8) -> u8 {
         let result: u8 = ((self.carry as u8) << 7) | (op >> 1);
         self.carry = (op & 1) != 0;
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         result
     }
 
@@ -440,7 +449,7 @@ impl MOS6502 {
         self.carry = result_16 >= 0;
         self.overflow = (is_negative(result) != is_negative(self.a))
             && (is_negative(result) == is_negative(op));
-        self.flag_updation(result);
+        self.update_nz_flags(result);
         result
     }
 
@@ -472,11 +481,7 @@ impl MOS6502 {
         let absolute_addr: u16 = imm16;
         let absolute_x_addr: u16 = imm16.wrapping_add(self.x as u16);
         let absolute_y_addr: u16 = imm16.wrapping_add(self.y as u16);
-        let indirect_addr: u16 = ((self
-            .read((absolute_addr & 0xff00) | ((absolute_addr as u8).wrapping_add(1) as u16))
-            as u16)
-            << 8)
-            | (self.read(absolute_addr) as u16);
+
         let indirect_x_addr: u16 =
             ((self.read((imm8.wrapping_add(self.x).wrapping_add(1)) as u16) as u16) << 8)
                 | (self.read((imm8.wrapping_add(self.x)) as u16) as u16);
@@ -489,16 +494,6 @@ impl MOS6502 {
         let absolute_y_crossed_page: bool = absolute_y_addr & 0xff00 != imm16 & 0xff00;
         let indirect_y_crossed_page: bool = indirect_y_addr & 0xff00 != indirect_y_base & 0xff00;
 
-        // The arguments for all addressing modes
-        let zero_page_arg: u8 = self.read(zero_page_addr);
-        let zero_page_x_arg: u8 = self.read(zero_page_x_addr);
-        let zero_page_y_arg: u8 = self.read(zero_page_y_addr);
-        let absolute_arg: u8 = self.read(absolute_addr);
-        let absolute_x_arg: u8 = self.read(absolute_x_addr);
-        let absolute_y_arg: u8 = self.read(absolute_y_addr);
-        let indirect_x_arg: u8 = self.read(indirect_x_addr);
-        let indirect_y_arg: u8 = self.read(indirect_y_addr);
-
         print!("{:04X} ", self.pc);
         self.dump_regs();
         match opcode {
@@ -509,36 +504,43 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0x65 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.a = self.adc(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0x75 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 self.a = self.adc(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0x6d => {
+                let absolute_arg = self.read(absolute_addr);
                 self.a = self.adc(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0x7d => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 self.a = self.adc(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0x79 => {
+                let absolute_y_arg = self.read(absolute_y_addr);
                 self.a = self.adc(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0x61 => {
+                let indirect_x_arg = self.read(indirect_x_addr);
                 self.a = self.adc(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0x71 => {
+                let indirect_y_arg = self.read(indirect_y_addr);
                 self.a = self.adc(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5 + (indirect_y_crossed_page as u64);
@@ -551,36 +553,43 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0x25 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.a = self.and(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0x35 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 self.a = self.and(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0x2d => {
+                let absolute_arg = self.read(absolute_addr);
                 self.a = self.and(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0x3d => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 self.a = self.and(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0x39 => {
+                let absolute_y_arg = self.read(absolute_y_addr);
                 self.a = self.and(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0x21 => {
+                let indirect_x_arg = self.read(indirect_x_addr);
                 self.a = self.and(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0x31 => {
+                let indirect_y_arg = self.read(indirect_y_addr);
                 self.a = self.and(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5 + (indirect_y_crossed_page as u64);
@@ -593,24 +602,28 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0x06 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 let result: u8 = self.asl(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5;
             }
             0x16 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 let result: u8 = self.asl(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0x0e => {
+                let absolute_arg = self.read(absolute_addr);
                 let result: u8 = self.asl(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 6;
             }
             0x1e => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 let result: u8 = self.asl(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
@@ -634,11 +647,13 @@ impl MOS6502 {
 
             // BIT
             0x24 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.bit(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0x2c => {
+                let absolute_arg = self.read(absolute_addr);
                 self.bit(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
@@ -713,36 +728,43 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0xc5 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.cmp(self.a, zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0xd5 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 self.cmp(self.a, zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0xcd => {
+                let absolute_arg = self.read(absolute_addr);
                 self.cmp(self.a, absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0xdd => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 self.cmp(self.a, absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0xd9 => {
+                let absolute_y_arg = self.read(absolute_y_addr);
                 self.cmp(self.a, absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0xc1 => {
+                let indirect_x_arg = self.read(indirect_x_addr);
                 self.cmp(self.a, indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0xd1 => {
+                let indirect_y_arg = self.read(indirect_y_addr);
                 self.cmp(self.a, indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5 + (indirect_y_crossed_page as u64);
@@ -755,11 +777,13 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0xe4 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.cmp(self.x, zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0xec => {
+                let absolute_arg = self.read(absolute_addr);
                 self.cmp(self.x, absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
@@ -772,11 +796,13 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0xc4 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.cmp(self.y, zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0xcc => {
+                let absolute_arg = self.read(absolute_addr);
                 self.cmp(self.y, absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
@@ -784,24 +810,28 @@ impl MOS6502 {
 
             // DEC
             0xc6 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 let result: u8 = self.dec(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5;
             }
             0xd6 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 let result: u8 = self.dec(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0xce => {
+                let absolute_arg = self.read(absolute_addr);
                 let result: u8 = self.dec(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 6;
             }
             0xde => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 let result: u8 = self.dec(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
@@ -829,36 +859,43 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0x45 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.a = self.eor(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0x55 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 self.a = self.eor(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0x4d => {
+                let absolute_arg = self.read(absolute_addr);
                 self.a = self.eor(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0x5d => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 self.a = self.eor(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0x59 => {
+                let absolute_y_arg = self.read(absolute_y_addr);
                 self.a = self.eor(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0x41 => {
+                let indirect_x_arg = self.read(indirect_x_addr);
                 self.a = self.eor(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0x51 => {
+                let indirect_y_arg = self.read(indirect_y_addr);
                 self.a = self.eor(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5 + (indirect_y_crossed_page as u64);
@@ -866,24 +903,28 @@ impl MOS6502 {
 
             // INC
             0xe6 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 let result: u8 = self.inc(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5;
             }
             0xf6 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 let result: u8 = self.inc(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0xee => {
+                let absolute_arg = self.read(absolute_addr);
                 let result: u8 = self.inc(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 6;
             }
             0xfe => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 let result: u8 = self.inc(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
@@ -910,6 +951,11 @@ impl MOS6502 {
                 self.cycles += 3;
             }
             0x6c => {
+                let indirect_addr: u16 = ((self
+                    .read((absolute_addr & 0xff00) | ((absolute_addr as u8).wrapping_add(1) as u16))
+                    as u16)
+                    << 8)
+                    | (self.read(absolute_addr) as u16);
                 self.pc = indirect_addr;
                 self.cycles += 5;
             }
@@ -924,49 +970,56 @@ impl MOS6502 {
             // LDA
             0xa9 => {
                 self.a = imm8;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 2;
             }
             0xa5 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.a = zero_page_arg;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0xb5 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 self.a = zero_page_x_arg;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0xad => {
+                let absolute_arg = self.read(absolute_addr);
                 self.a = absolute_arg;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0xbd => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 self.a = absolute_x_arg;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0xb9 => {
+                let absolute_y_arg = self.read(absolute_y_addr);
                 self.a = absolute_y_arg;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0xa1 => {
+                let indirect_x_arg = self.read(indirect_x_addr);
                 self.a = indirect_x_arg;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0xb1 => {
+                let indirect_y_arg = self.read(indirect_y_addr);
                 self.a = indirect_y_arg;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5 + (indirect_y_crossed_page as u64);
             }
@@ -974,31 +1027,35 @@ impl MOS6502 {
             // LDX
             0xa2 => {
                 self.x = imm8;
-                self.flag_updation(self.x);
+                self.update_nz_flags(self.x);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 2;
             }
             0xa6 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.x = zero_page_arg;
-                self.flag_updation(self.x);
+                self.update_nz_flags(self.x);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0xb6 => {
+                let zero_page_y_arg = self.read(zero_page_y_addr);
                 self.x = zero_page_y_arg;
-                self.flag_updation(self.x);
+                self.update_nz_flags(self.x);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0xae => {
+                let absolute_arg = self.read(absolute_addr);
                 self.x = absolute_arg;
-                self.flag_updation(self.x);
+                self.update_nz_flags(self.x);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0xbe => {
+                let absolute_y_arg = self.read(absolute_y_addr);
                 self.x = absolute_y_arg;
-                self.flag_updation(self.x);
+                self.update_nz_flags(self.x);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
@@ -1006,31 +1063,35 @@ impl MOS6502 {
             // LDY
             0xa0 => {
                 self.y = imm8;
-                self.flag_updation(self.y);
+                self.update_nz_flags(self.y);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 2;
             }
             0xa4 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.y = zero_page_arg;
-                self.flag_updation(self.y);
+                self.update_nz_flags(self.y);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0xb4 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 self.y = zero_page_x_arg;
-                self.flag_updation(self.y);
+                self.update_nz_flags(self.y);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0xac => {
+                let absolute_arg = self.read(absolute_addr);
                 self.y = absolute_arg;
-                self.flag_updation(self.y);
+                self.update_nz_flags(self.y);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0xbc => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 self.y = absolute_x_arg;
-                self.flag_updation(self.y);
+                self.update_nz_flags(self.y);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
@@ -1042,24 +1103,28 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0x46 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 let result: u8 = self.lsr(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5;
             }
             0x56 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 let result: u8 = self.lsr(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0x4e => {
+                let absolute_arg = self.read(absolute_addr);
                 let result: u8 = self.lsr(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 6;
             }
             0x5e => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 let result: u8 = self.lsr(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
@@ -1079,36 +1144,43 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0x05 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.a = self.ora(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0x15 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 self.a = self.ora(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0x0d => {
+                let absolute_arg = self.read(absolute_addr);
                 self.a = self.ora(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0x1d => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 self.a = self.ora(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0x19 => {
+                let absolute_y_arg = self.read(absolute_y_addr);
                 self.a = self.ora(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0x01 => {
+                let indirect_x_arg = self.read(indirect_x_addr);
                 self.a = self.ora(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0x11 => {
+                let indirect_y_arg = self.read(indirect_y_addr);
                 self.a = self.ora(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5 + (indirect_y_crossed_page as u64);
@@ -1131,7 +1203,7 @@ impl MOS6502 {
             // PLA
             0x68 => {
                 self.a = self.pop();
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(1);
                 self.cycles += 4;
             }
@@ -1150,24 +1222,28 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0x26 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 let result: u8 = self.rol(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5;
             }
             0x36 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 let result: u8 = self.rol(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0x2e => {
+                let absolute_arg = self.read(absolute_addr);
                 let result: u8 = self.rol(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 6;
             }
             0x3e => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 let result: u8 = self.rol(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
@@ -1181,24 +1257,28 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0x66 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 let result: u8 = self.ror(zero_page_arg);
                 self.write(zero_page_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5;
             }
             0x76 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 let result: u8 = self.ror(zero_page_x_arg);
                 self.write(zero_page_x_addr, result);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0x6e => {
+                let absolute_arg = self.read(absolute_addr);
                 let result: u8 = self.ror(absolute_arg);
                 self.write(absolute_addr, result);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 6;
             }
             0x7e => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 let result: u8 = self.ror(absolute_x_arg);
                 self.write(absolute_x_addr, result);
                 self.pc = self.pc.wrapping_add(3);
@@ -1225,36 +1305,43 @@ impl MOS6502 {
                 self.cycles += 2;
             }
             0xe5 => {
+                let zero_page_arg = self.read(zero_page_addr);
                 self.a = self.sbc(zero_page_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 3;
             }
             0xf5 => {
+                let zero_page_x_arg = self.read(zero_page_x_addr);
                 self.a = self.sbc(zero_page_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 4;
             }
             0xed => {
+                let absolute_arg = self.read(absolute_addr);
                 self.a = self.sbc(absolute_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4;
             }
             0xfd => {
+                let absolute_x_arg = self.read(absolute_x_addr);
                 self.a = self.sbc(absolute_x_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_x_crossed_page as u64);
             }
             0xf9 => {
+                let absolute_y_arg = self.read(absolute_y_addr);
                 self.a = self.sbc(absolute_y_arg);
                 self.pc = self.pc.wrapping_add(3);
                 self.cycles += 4 + (absolute_y_crossed_page as u64);
             }
             0xe1 => {
+                let indirect_x_arg = self.read(indirect_x_addr);
                 self.a = self.sbc(indirect_x_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 6;
             }
             0xf1 => {
+                let indirect_y_arg = self.read(indirect_y_addr);
                 self.a = self.sbc(indirect_y_arg);
                 self.pc = self.pc.wrapping_add(2);
                 self.cycles += 5 + (indirect_y_crossed_page as u64);
@@ -1355,7 +1442,7 @@ impl MOS6502 {
             // TAX
             0xaa => {
                 self.x = self.a;
-                self.flag_updation(self.x);
+                self.update_nz_flags(self.x);
                 self.pc = self.pc.wrapping_add(1);
                 self.cycles += 2;
             }
@@ -1363,7 +1450,7 @@ impl MOS6502 {
             // TAY
             0xa8 => {
                 self.y = self.a;
-                self.flag_updation(self.y);
+                self.update_nz_flags(self.y);
                 self.pc = self.pc.wrapping_add(1);
                 self.cycles += 2;
             }
@@ -1371,7 +1458,7 @@ impl MOS6502 {
             // TSX
             0xba => {
                 self.x = self.s;
-                self.flag_updation(self.x);
+                self.update_nz_flags(self.x);
                 self.pc = self.pc.wrapping_add(1);
                 self.cycles += 2;
             }
@@ -1379,7 +1466,7 @@ impl MOS6502 {
             // TXA
             0x8a => {
                 self.a = self.x;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(1);
                 self.cycles += 2;
             }
@@ -1394,7 +1481,7 @@ impl MOS6502 {
             // TYA
             0x98 => {
                 self.a = self.y;
-                self.flag_updation(self.a);
+                self.update_nz_flags(self.a);
                 self.pc = self.pc.wrapping_add(1);
                 self.cycles += 2;
             }

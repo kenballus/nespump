@@ -5,6 +5,11 @@ use std::process;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::pixels::Color;
+use sdl2::rect::Point;
+use sdl2::render::Canvas;
+use sdl2::video::Window;
+use std::time::Duration;
 
 struct MOS6502 {
     a: u8,
@@ -22,12 +27,18 @@ struct MOS6502 {
     cycles: u64,
 
     ram: [u8; 0x800],
-    // mirror_ram: [u8; 0x800 * 3],
     ppu_regs: [u8; 8],
-    // mirror_ppu_regs: [u8; 8 * 0x3ff],
     apu_and_io_regs: [u8; 0x18],
-    // test_regs: [u8; 8],
     cartridge: [u8; 0xbfe0],
+
+    ppu_cartridge: [u8; 0x3f00],
+    ppu_ram: [u8; 0x20],
+    oam: [u8; 0x100],
+    w: bool,
+    ppuaddr: u16,
+    ppudata: u8,
+    internal_x_scroll: u8,
+    internal_y_scroll: u8,
 }
 
 enum Button {
@@ -60,9 +71,34 @@ impl Default for MOS6502 {
             ppu_regs: [0, 0, 0b10100000, 0, 0, 0, 0, 0],
             apu_and_io_regs: [0; 0x18], // TODO
             cartridge: [0; 0xbfe0],
+            ppu_cartridge: [0; 0x3f00],
+            ppu_ram: [0; 0x20],
+            oam: [0; 0x100],
+            w: false,
+            ppuaddr: 0,
+            ppudata: 0,
+            internal_x_scroll: 0,
+            internal_y_scroll: 0,
         }
     }
 }
+
+const RESET_VECTOR: u16 = 0xfffc;
+const INTERRUPT_VECTOR: u16 = 0xfffe;
+const PPUCTRL: u16 = 0x2000;
+const OAMADDR: u16 = 0x2003;
+const OAMDATA: u16 = 0x2004;
+const OAMDATA_I: u16 = OAMDATA % 8;
+const PPUSCROLL: u16 = 0x2005;
+const PPUSCROLL_I: u16 = PPUSCROLL % 8;
+const PPUADDR: u16 = 0x2006;
+const PPUADDR_I: u16 = PPUADDR % 8;
+const PPUDATA: u16 = 0x2007;
+const PPUDATA_I: u16 = PPUDATA % 8;
+const PPUSTATUS: u16 = 0x2002;
+const PPUSTATUS_I: u16 = PPUSTATUS % 8;
+const OAMDMA: u16 = 0x4014;
+const OAMDMA_I: u16 = OAMDMA % 0x18;
 
 impl MOS6502 {
     fn new(rom_file: &mut File) -> Self {
@@ -80,12 +116,13 @@ impl MOS6502 {
         rom_file
             .read_exact(&mut raw_prg_rom_size)
             .expect("Couldn't read PRG ROM size");
-        let prg_rom_size: u8 = raw_prg_rom_size[0];
+        let prg_rom_size: u16 = raw_prg_rom_size[0] as u16;
 
         let mut raw_chr_rom_size: [u8; 1] = [0];
         rom_file
             .read_exact(&mut raw_chr_rom_size)
             .expect("Couldn't read CHR ROM size");
+        let chr_rom_size: u16 = raw_chr_rom_size[0] as u16;
 
         let mut raw_flags_6: [u8; 1] = [0];
         rom_file
@@ -117,17 +154,50 @@ impl MOS6502 {
             .read_exact(&mut unused)
             .expect("Couldn't read header padding");
 
+        if prg_rom_size != 1 {
+            panic!("iNES parser doesn't yet support larger PRG ROMs");
+        }
         for prg_rom_no in 0..prg_rom_size {
             let mut buf: [u8; 0x4000] = [0; 0x4000];
-            rom_file.read_exact(&mut buf).expect("Couldn't read ROM");
-            let base_addr: u16 = 0xc000 - (prg_rom_no as u16) * 0x4000;
+            rom_file
+                .read_exact(&mut buf)
+                .expect("Couldn't read PRG ROM");
             for (i, byte_ref) in buf.iter().enumerate() {
-                result.write(base_addr + (i as u16), *byte_ref);
+                result.write(0xc000 - prg_rom_no * 0x4000 + i as u16, *byte_ref);
             }
         }
 
-        result.pc = result.read16(0xfffc).wrapping_sub(4);
+        if chr_rom_size > 1 {
+            panic!("iNES parser doesn't yet support larger CHR ROMs");
+        }
+        for chr_rom_no in 0..chr_rom_size {
+            let mut buf: [u8; 0x2000] = [0; 0x2000];
+            rom_file
+                .read_exact(&mut buf)
+                .expect("Couldn't read CHR ROM");
+            for (i, byte_ref) in buf.iter().enumerate() {
+                result.ppu_write(chr_rom_no * 0x2000 + i as u16, *byte_ref);
+            }
+        }
+
+        result.pc = result.read16(RESET_VECTOR).wrapping_sub(4);
         result
+    }
+
+    fn ppu_read(&self, addr: u16) -> u8 {
+        match addr {
+            0x0000..0x3f00 => self.ppu_cartridge[addr as usize],
+            0x3f00..0x4000 => self.ppu_ram[(addr % 0x20) as usize],
+            _ => panic!("Invalid PPU read address: {:04X}", addr),
+        }
+    }
+
+    fn ppu_write(&mut self, addr: u16, val: u8) {
+        match addr {
+            0x0000..0x3f00 => self.ppu_cartridge[addr as usize] = val,
+            0x3f00..0x4000 => self.ppu_ram[(addr % 0x20) as usize] = val,
+            _ => panic!("Invalid PPU write address: {:04X}", addr),
+        }
     }
 
     fn dump_regs(&self) {
@@ -191,28 +261,92 @@ impl MOS6502 {
 
     fn key_down(&mut self, _b: Button) {}
 
-    fn read(&self, addr: u16) -> u8 {
+    fn read(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..0x2000 => self.ram[(addr % 0x0800) as usize],
-            0x2000..0x4000 => self.ppu_regs[(addr % 8) as usize],
+            0x2000..0x4000 => match addr % 8 {
+                PPUSTATUS_I => {
+                    self.w = false;
+                    self.ppu_regs[(addr % 8) as usize]
+                }
+                PPUDATA_I => {
+                    let result: u8 = self.ppudata;
+                    self.ppudata = self.ppu_read(self.ppuaddr);
+                    self.ppuaddr += if (self.read(PPUCTRL) & 0b100) == 0 {
+                        1
+                    } else {
+                        32
+                    };
+                    result
+                }
+                OAMDATA_I => {
+                    let oam_addr: u8 = self.read(OAMADDR);
+                    self.oam[oam_addr as usize]
+                }
+                _ => self.ppu_regs[(addr % 8) as usize],
+            },
             0x4000..0x4018 => self.apu_and_io_regs[(addr - 0x4000) as usize],
             0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize],
             _ => panic!("Invalid memory read!"),
         }
     }
 
-    fn read16(&self, addr: u16) -> u16 {
+    fn read16(&mut self, addr: u16) -> u16 {
         ((self.read(addr.wrapping_add(1)) as u16) << 8) | (self.read(addr) as u16)
     }
 
     fn write(&mut self, addr: u16, val: u8) {
         match addr {
             0x0000..0x2000 => self.ram[(addr % 0x0800) as usize] = val,
-            0x2000..0x4000 => self.ppu_regs[(addr % 8) as usize] = val,
-            0x4000..0x4018 => self.apu_and_io_regs[(addr - 0x4000) as usize] = val,
+            0x2000..0x4000 => match addr % 8 {
+                OAMDATA_I => {
+                    let oam_addr: u8 = self.read(OAMADDR);
+                    self.oam[oam_addr as usize] = val;
+                    self.write(OAMADDR, oam_addr.wrapping_add(1));
+                }
+                PPUADDR_I => {
+                    self.ppuaddr &= if self.w { 0x00ff } else { 0xff00 };
+                    self.ppuaddr |= (val as u16) << (if self.w { 0 } else { 8 });
+                }
+                PPUSCROLL_I => {
+                    if self.w {
+                        self.internal_y_scroll = val;
+                    } else {
+                        self.internal_x_scroll = val;
+                    }
+                }
+                PPUDATA_I => {
+                    self.ppu_write(self.ppuaddr, val);
+                    self.ppuaddr += if (self.read(PPUCTRL) & 0b100) == 0 {
+                        1
+                    } else {
+                        32
+                    };
+                }
+                _ => {
+                    self.ppu_regs[(addr % 8) as usize] = val;
+                }
+            },
+            0x4000..0x4018 => match addr % 0x18 {
+                OAMDMA_I => {
+                    for i in 0x00..0xff {
+                        self.oam[i as usize] = self.read(((val as u16) << 8) | i);
+                    }
+                    self.cycles += 513; // Might have to be 514
+                }
+                _ => self.apu_and_io_regs[(addr - 0x4000) as usize] = val,
+            },
             0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize] = val,
             _ => panic!("Invalid memory write!"),
         }
+    }
+
+    fn get_x_scroll(&mut self) -> u16 {
+        (((self.read(PPUCTRL) & 1) as u16) << 8) | (self.internal_x_scroll as u16)
+    }
+
+    fn get_y_scroll(&mut self) -> u16 {
+        (((self.read(PPUCTRL) & 0b10) as u16) << 7) | (self.internal_y_scroll as u16)
     }
 
     fn adc(&mut self, op: u8) -> u8 {
@@ -529,7 +663,7 @@ impl MOS6502 {
             0x00 => {
                 self.push16(self.pc.wrapping_add(2));
                 self.push(self.get_flags_byte(true));
-                self.pc = self.read16(0xfffe);
+                self.pc = self.read16(INTERRUPT_VECTOR);
                 self.interrupt_disable = true;
                 self.cycles += 7;
             }
@@ -1274,6 +1408,15 @@ fn is_negative(val: u8) -> bool {
     val & 0b10000000 != 0
 }
 
+fn plot_px(canvas: &mut Canvas<Window>, color: Color, r: u8, c: u8) {
+    canvas.set_draw_color(color);
+    canvas
+        .draw_points([Point::new(c as i32, r as i32)].as_slice())
+        .expect("Couldn't plot pixel");
+}
+
+const CPU_CYCLES_PER_FRAME: u64 = 29780;
+
 fn main() {
     let args: Vec<_> = env::args_os().collect();
     if args.len() != 2 {
@@ -1296,7 +1439,8 @@ fn main() {
         .build()
         .expect("Couldn't build window");
 
-    let mut canvas = window.into_canvas().build().expect("Couldn't build canvas");
+    let mut canvas: Canvas<Window> = window.into_canvas().build().expect("Couldn't build canvas");
+    canvas.clear();
     canvas.present();
     let mut event_pump = sdl_context.event_pump().expect("Couldn't make event pump");
 
@@ -1341,5 +1485,8 @@ fn main() {
         }
         cpu.step();
         canvas.present();
+        if cpu.cycles % CPU_CYCLES_PER_FRAME == 0 {
+            std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        }
     }
 }

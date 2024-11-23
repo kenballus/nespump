@@ -9,9 +9,434 @@ use sdl2::pixels::Color;
 use sdl2::rect::Point;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
-use std::time::Duration;
 
-struct MOS6502 {
+fn plot_px(canvas: &mut Canvas<Window>, color: Color, r: usize, c: usize) {
+    canvas.set_draw_color(color);
+    let mut points: [Point; 16] = [Point::new(0, 0); 16];
+    for i in 0..4 {
+        for j in 0..4 {
+            points[i * 4 + j] = Point::new((c * 4 + j) as i32, (r * 4 + i) as i32)
+        }
+    }
+    canvas
+        .draw_points(points.as_slice())
+        .expect("Couldn't plot pixel");
+}
+
+fn plot_tile(
+    canvas: &mut Canvas<Window>,
+    tile: Tile,
+    palette: Palette,
+    y: usize,
+    x: usize,
+    h_flip: bool,
+    v_flip: bool,
+    allow_transparency: bool,
+) {
+    for i in 0..tile.data.len() {
+        let r = if v_flip { tile.data.len() - i - 1 } else { i };
+        for (j, &px) in tile.data[i].iter().enumerate() {
+            if !allow_transparency || px != 0 {
+                let c = if h_flip {
+                    tile.data[i].len() - j - 1
+                } else {
+                    j
+                };
+                plot_px(canvas, palette.data[px as usize], y + r, x + c)
+            }
+        }
+    }
+}
+
+// Colors obtained from https://bugzmanov.github.io/nes_ebook/chapter_6_3.html
+pub static SYSTEM_PALETTE: [Color; 64] = [
+    Color {
+        r: 0x80,
+        g: 0x80,
+        b: 0x80,
+        a: 1,
+    },
+    Color {
+        r: 0x00,
+        g: 0x3D,
+        b: 0xA6,
+        a: 1,
+    },
+    Color {
+        r: 0x00,
+        g: 0x12,
+        b: 0xB0,
+        a: 1,
+    },
+    Color {
+        r: 0x44,
+        g: 0x00,
+        b: 0x96,
+        a: 1,
+    },
+    Color {
+        r: 0xA1,
+        g: 0x00,
+        b: 0x5E,
+        a: 1,
+    },
+    Color {
+        r: 0xC7,
+        g: 0x00,
+        b: 0x28,
+        a: 1,
+    },
+    Color {
+        r: 0xBA,
+        g: 0x06,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x8C,
+        g: 0x17,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x5C,
+        g: 0x2F,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x10,
+        g: 0x45,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x05,
+        g: 0x4A,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x00,
+        g: 0x47,
+        b: 0x2E,
+        a: 1,
+    },
+    Color {
+        r: 0x00,
+        g: 0x41,
+        b: 0x66,
+        a: 1,
+    },
+    Color {
+        r: 0x00,
+        g: 0x00,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x05,
+        g: 0x05,
+        b: 0x05,
+        a: 1,
+    },
+    Color {
+        r: 0x05,
+        g: 0x05,
+        b: 0x05,
+        a: 1,
+    },
+    Color {
+        r: 0xC7,
+        g: 0xC7,
+        b: 0xC7,
+        a: 1,
+    },
+    Color {
+        r: 0x00,
+        g: 0x77,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0x21,
+        g: 0x55,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0x82,
+        g: 0x37,
+        b: 0xFA,
+        a: 1,
+    },
+    Color {
+        r: 0xEB,
+        g: 0x2F,
+        b: 0xB5,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0x29,
+        b: 0x50,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0x22,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0xD6,
+        g: 0x32,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0xC4,
+        g: 0x62,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x35,
+        g: 0x80,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x05,
+        g: 0x8F,
+        b: 0x00,
+        a: 1,
+    },
+    Color {
+        r: 0x00,
+        g: 0x8A,
+        b: 0x55,
+        a: 1,
+    },
+    Color {
+        r: 0x00,
+        g: 0x99,
+        b: 0xCC,
+        a: 1,
+    },
+    Color {
+        r: 0x21,
+        g: 0x21,
+        b: 0x21,
+        a: 1,
+    },
+    Color {
+        r: 0x09,
+        g: 0x09,
+        b: 0x09,
+        a: 1,
+    },
+    Color {
+        r: 0x09,
+        g: 0x09,
+        b: 0x09,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0x0F,
+        g: 0xD7,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0x69,
+        g: 0xA2,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0xD4,
+        g: 0x80,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0x45,
+        b: 0xF3,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0x61,
+        b: 0x8B,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0x88,
+        b: 0x33,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0x9C,
+        b: 0x12,
+        a: 1,
+    },
+    Color {
+        r: 0xFA,
+        g: 0xBC,
+        b: 0x20,
+        a: 1,
+    },
+    Color {
+        r: 0x9F,
+        g: 0xE3,
+        b: 0x0E,
+        a: 1,
+    },
+    Color {
+        r: 0x2B,
+        g: 0xF0,
+        b: 0x35,
+        a: 1,
+    },
+    Color {
+        r: 0x0C,
+        g: 0xF0,
+        b: 0xA4,
+        a: 1,
+    },
+    Color {
+        r: 0x05,
+        g: 0xFB,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0x5E,
+        g: 0x5E,
+        b: 0x5E,
+        a: 1,
+    },
+    Color {
+        r: 0x0D,
+        g: 0x0D,
+        b: 0x0D,
+        a: 1,
+    },
+    Color {
+        r: 0x0D,
+        g: 0x0D,
+        b: 0x0D,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0xA6,
+        g: 0xFC,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0xB3,
+        g: 0xEC,
+        b: 0xFF,
+        a: 1,
+    },
+    Color {
+        r: 0xDA,
+        g: 0xAB,
+        b: 0xEB,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0xA8,
+        b: 0xF9,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0xAB,
+        b: 0xB3,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0xD2,
+        b: 0xB0,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0xEF,
+        b: 0xA6,
+        a: 1,
+    },
+    Color {
+        r: 0xFF,
+        g: 0xF7,
+        b: 0x9C,
+        a: 1,
+    },
+    Color {
+        r: 0xD7,
+        g: 0xE8,
+        b: 0x95,
+        a: 1,
+    },
+    Color {
+        r: 0xA6,
+        g: 0xED,
+        b: 0xAF,
+        a: 1,
+    },
+    Color {
+        r: 0xA2,
+        g: 0xF2,
+        b: 0xDA,
+        a: 1,
+    },
+    Color {
+        r: 0x99,
+        g: 0xFF,
+        b: 0xFC,
+        a: 1,
+    },
+    Color {
+        r: 0xDD,
+        g: 0xDD,
+        b: 0xDD,
+        a: 1,
+    },
+    Color {
+        r: 0x11,
+        g: 0x11,
+        b: 0x11,
+        a: 1,
+    },
+    Color {
+        r: 0x11,
+        g: 0x11,
+        b: 0x11,
+        a: 1,
+    },
+];
+
+struct Nes {
     a: u8,
     x: u8,
     y: u8,
@@ -39,27 +464,78 @@ struct MOS6502 {
     ppudata: u8,
     internal_x_scroll: u8,
     internal_y_scroll: u8,
+    oamdata_is_ff: bool,
+
+    buttons: [bool; 8],
+    current_button: usize,
+    strobe_mode: bool,
 }
 
-enum Button {
-    Right,
-    Left,
-    Up,
-    Down,
-    A,
-    B,
-    Select,
-    Start,
+struct Sprite {
+    c: u8,
+    r: u8,
+    pattern_table_index: u8,
+    palette_index: u8,
+    priority: bool,
+    h_flip: bool,
+    v_flip: bool,
 }
 
-impl Default for MOS6502 {
-    fn default() -> MOS6502 {
-        MOS6502 {
+struct Tile {
+    data: [[u8; 8]; 8],
+}
+
+struct Palette {
+    data: [Color; 4],
+}
+
+fn parse_palette(data: [u8; 4]) -> Palette {
+    Palette {
+        data: [
+            SYSTEM_PALETTE[data[0] as usize],
+            SYSTEM_PALETTE[data[1] as usize],
+            SYSTEM_PALETTE[data[2] as usize],
+            SYSTEM_PALETTE[data[3] as usize],
+        ],
+    }
+}
+
+fn parse_tile(data: [u8; 16]) -> Tile {
+    let mut result: [[u8; 8]; 8] = [[0; 8]; 8];
+    for (i, &byte) in data.iter().enumerate() {
+        if i < 8 {
+            for j in 0..8 {
+                result[i][j] |= (byte >> (7 - j)) & 1
+            }
+        } else {
+            for j in 0..8 {
+                result[i - 8][j] |= ((byte >> (7 - j)) & 1) << 1
+            }
+        }
+    }
+    Tile { data: result }
+}
+
+fn parse_sprite(data: [u8; 4]) -> Sprite {
+    Sprite {
+        c: data[3],
+        r: data[0],
+        pattern_table_index: data[1],
+        palette_index: data[2] & 0b11,
+        priority: (data[2] & 0b100000) != 0,
+        h_flip: (data[2] & 0b1000000) != 0,
+        v_flip: (data[2] & 0b10000000) != 0,
+    }
+}
+
+impl Default for Nes {
+    fn default() -> Nes {
+        Nes {
             a: 0,
             x: 0,
             y: 0,
             s: 0xfd,
-            pc: 0x0000, // Gets filled in by MOS6502::new
+            pc: 0x0000, // Gets filled in by Nes::new
             carry: false,
             zero: false,
             interrupt_disable: true,
@@ -69,7 +545,7 @@ impl Default for MOS6502 {
             cycles: 0,
             ram: [0; 0x800],
             ppu_regs: [0, 0, 0b10100000, 0, 0, 0, 0, 0],
-            apu_and_io_regs: [0; 0x18], // TODO
+            apu_and_io_regs: [0; 0x18],
             cartridge: [0; 0xbfe0],
             ppu_cartridge: [0; 0x3f00],
             ppu_ram: [0; 0x20],
@@ -79,13 +555,19 @@ impl Default for MOS6502 {
             ppudata: 0,
             internal_x_scroll: 0,
             internal_y_scroll: 0,
+            oamdata_is_ff: false,
+            buttons: [false; 8],
+            current_button: 0,
+            strobe_mode: false,
         }
     }
 }
 
 const RESET_VECTOR: u16 = 0xfffc;
-const INTERRUPT_VECTOR: u16 = 0xfffe;
+const BRK_VECTOR: u16 = 0xfffe;
+const NMI_VECTOR: u16 = 0xfffa;
 const PPUCTRL: u16 = 0x2000;
+const PPUCTRL_I: u16 = PPUCTRL % 8;
 const OAMADDR: u16 = 0x2003;
 const OAMDATA: u16 = 0x2004;
 const OAMDATA_I: u16 = OAMDATA % 8;
@@ -99,8 +581,10 @@ const PPUSTATUS: u16 = 0x2002;
 const PPUSTATUS_I: u16 = PPUSTATUS % 8;
 const OAMDMA: u16 = 0x4014;
 const OAMDMA_I: u16 = OAMDMA % 0x18;
+const JOYPAD: u16 = 0x4016;
+const JOYPAD_I: u16 = JOYPAD % 0x18;
 
-impl MOS6502 {
+impl Nes {
     fn new(rom_file: &mut File) -> Self {
         let mut result: Self = Default::default();
 
@@ -109,7 +593,7 @@ impl MOS6502 {
             .read_exact(&mut magic)
             .expect("Couldn't read magic");
         if magic != [0x4e, 0x45, 0x53, 0x1a] {
-            panic!("Invalid iNES magic");
+            panic!("Invalid iNes magic");
         }
 
         let mut raw_prg_rom_size: [u8; 1] = [0];
@@ -155,33 +639,33 @@ impl MOS6502 {
             .expect("Couldn't read header padding");
 
         if prg_rom_size > 2 {
-            panic!("iNES parser doesn't yet support larger PRG ROMs");
+            panic!("iNes parser doesn't yet support larger PRG ROMs");
         }
         for prg_rom_no in 0..prg_rom_size {
             let mut buf: [u8; 0x4000] = [0; 0x4000];
             rom_file
                 .read_exact(&mut buf)
                 .expect("Couldn't read PRG ROM");
-            for (i, byte_ref) in buf.iter().enumerate() {
+            for (i, &byte) in buf.iter().enumerate() {
                 result.write(
                     (if prg_rom_size == 2 { 0x8000 } else { 0xc000 })
                         + prg_rom_no * 0x4000
                         + i as u16,
-                    *byte_ref,
+                    byte,
                 );
             }
         }
 
         if chr_rom_size > 1 {
-            panic!("iNES parser doesn't yet support larger CHR ROMs");
+            panic!("iNes parser doesn't yet support larger CHR ROMs");
         }
         for chr_rom_no in 0..chr_rom_size {
             let mut buf: [u8; 0x2000] = [0; 0x2000];
             rom_file
                 .read_exact(&mut buf)
                 .expect("Couldn't read CHR ROM");
-            for (i, byte_ref) in buf.iter().enumerate() {
-                result.ppu_write(chr_rom_no * 0x2000 + i as u16, *byte_ref);
+            for (i, &byte) in buf.iter().enumerate() {
+                result.ppu_write(chr_rom_no * 0x2000 + i as u16, byte);
             }
         }
 
@@ -189,20 +673,141 @@ impl MOS6502 {
         result
     }
 
+    fn get_bg_pattern_table_base(&mut self) -> u16 {
+        (((self.read(PPUCTRL) >> 4) & 1) as u16) * 0x1000
+    }
+
+    fn get_sprite_pattern_table_base(&mut self) -> u16 {
+        (((self.read(PPUCTRL) >> 3) & 1) as u16) * 0x1000
+    }
+
+    fn get_name_table_base(&mut self) -> u16 {
+        0x2000 + ((self.read(PPUCTRL) & 0b11) as u16) * 0x400
+    }
+
+    fn get_attribute_table_base(&mut self) -> u16 {
+        self.get_name_table_base() + 0x3c0
+    }
+
+    fn render_bg(&mut self, canvas: &mut Canvas<Window>) {
+        let pattern_table_base = self.get_bg_pattern_table_base(); // (PPU addr)
+        let name_table_base = self.get_name_table_base(); // (PPU addr)
+        let attribute_table_base = self.get_attribute_table_base(); // (PPU addr)
+        for r in 0..30 {
+            for c in 0..32 {
+                let name_table_entry: u8 = self.ppu_read(name_table_base + r * 32 + c);
+
+                let mut raw_tile_data: [u8; 16] = [0; 16];
+                for i in 0..raw_tile_data.len() {
+                    raw_tile_data[i] =
+                        self.ppu_read(pattern_table_base + name_table_entry as u16 * 16 + i as u16);
+                }
+                let tile: Tile = parse_tile(raw_tile_data);
+
+                let attribute_table_entry: u8 =
+                    self.ppu_read(attribute_table_base + (r / 4) * 8 + (c / 4));
+
+                let palette_index: u16 = if r % 2 == r % 4 && c % 2 == c % 4 {
+                    // upper left
+                    attribute_table_entry & 0b11
+                } else if r % 2 == r % 4 && c % 2 != c % 4 {
+                    // upper right
+                    (attribute_table_entry >> 2) & 0b11
+                } else if r % 2 != r % 4 && c % 2 == c % 4 {
+                    // lower left
+                    (attribute_table_entry >> 4) & 0b11
+                } else {
+                    // lower right
+                    (attribute_table_entry >> 6) & 0b11
+                } as u16;
+
+                let palette_base: u16 = 0x3f00 + 4 * palette_index; // BG_PALETTE_ADDR + sizeof(palette) * palette_index
+                let mut raw_palette_data: [u8; 4] = [0; 4];
+                for i in 0..raw_palette_data.len() {
+                    raw_palette_data[i] = self.ppu_read(palette_base + i as u16);
+                }
+                let palette: Palette = parse_palette(raw_palette_data);
+
+                plot_tile(
+                    canvas,
+                    tile,
+                    palette,
+                    (r * 8) as usize,
+                    (c * 8) as usize,
+                    false,
+                    false,
+                    false,
+                );
+            }
+        }
+    }
+
+    fn render_sprites(&mut self, canvas: &mut Canvas<Window>) {
+        let pattern_table_base = self.get_sprite_pattern_table_base(); // (PPU addr)
+        for i in 0..(self.oam.len() / 4) {
+            // Number of sprites in OAM
+            let mut raw_sprite_data = [0; 4];
+            raw_sprite_data.copy_from_slice(&self.oam[i * 4..(i + 1) * 4]);
+            let sprite: Sprite = parse_sprite(raw_sprite_data);
+
+            let mut raw_tile_data: [u8; 16] = [0; 16];
+            for i in 0..raw_tile_data.len() {
+                raw_tile_data[i] = self.ppu_read(
+                    pattern_table_base + sprite.pattern_table_index as u16 * 16 + i as u16,
+                );
+            }
+            let tile: Tile = parse_tile(raw_tile_data);
+
+            let palette_base: u16 = 0x3f10 + 4 * sprite.palette_index as u16;
+            let mut raw_palette_data: [u8; 4] = [0; 4];
+            for i in 0..raw_palette_data.len() {
+                raw_palette_data[i] = self.ppu_read(palette_base + i as u16);
+            }
+            let palette: Palette = parse_palette(raw_palette_data);
+
+            plot_tile(
+                canvas,
+                tile,
+                palette,
+                sprite.r as usize,
+                sprite.c as usize,
+                sprite.h_flip,
+                sprite.v_flip,
+                true,
+            )
+        }
+    }
+
     fn ppu_read(&self, addr: u16) -> u8 {
         match addr {
-            0x0000..0x3f00 => self.ppu_cartridge[addr as usize],
+            0x0000..0x2400 => self.ppu_cartridge[addr as usize],
+            0x2400..0x3000 => self.ppu_cartridge[(addr as usize - 0x2000) % 0x400],
+            0x3000..0x3f00 => self.ppu_cartridge[addr as usize],
             0x3f00..0x4000 => self.ppu_ram[(addr % 0x20) as usize],
-            _ => panic!("Invalid PPU read address: {:04X}", addr),
+            0x4000..=0xffff => self.ppu_read(addr % 0x4000),
         }
     }
 
     fn ppu_write(&mut self, addr: u16, val: u8) {
         match addr {
-            0x0000..0x3f00 => self.ppu_cartridge[addr as usize] = val,
+            0x0000..0x2400 => self.ppu_cartridge[addr as usize] = val,
+            0x2400..0x3000 => self.ppu_cartridge[(addr as usize - 0x2000) % 0x400] = val,
+            0x3000..0x3f00 => self.ppu_cartridge[addr as usize] = val,
             0x3f00..0x4000 => self.ppu_ram[(addr % 0x20) as usize] = val,
-            _ => panic!("Invalid PPU write address: {:04X}", addr),
+            0x4000..=0xffff => self.ppu_write(addr % 0x4000, val),
         }
+    }
+
+    fn is_in_8x16_mode(&mut self) -> bool {
+        (self.read(PPUCTRL) & 0b00100000) != 0
+    }
+
+    fn sprite_is_enabled(&mut self) -> bool {
+        (self.read(PPUCTRL) & 0b00010000) != 0
+    }
+
+    fn background_is_enabled(&mut self) -> bool {
+        (self.read(PPUCTRL) & 0b00001000) != 0
     }
 
     fn dump_regs(&self) {
@@ -265,10 +870,17 @@ impl MOS6502 {
         self.zero = (result & 0b00000010) != 0;
     }
 
-    fn key_down(&mut self, _b: Button) {}
+    fn key_down(&mut self, b: usize) {
+        self.buttons[b] = true;
+    }
+
+    fn key_up(&mut self, b: usize) {
+        self.buttons[b] = false;
+    }
 
     fn read(&mut self, addr: u16) -> u8 {
-        // This function needs `&mut self` because reading from PPUSTATUS resets the w register.
+        // This function needs `&mut self` because reading from some memory-mapped registers can change
+        // the state of the system
         match addr {
             0x0000..0x2000 => self.ram[(addr % 0x0800) as usize],
             0x2000..0x4000 => match addr % 8 {
@@ -287,19 +899,27 @@ impl MOS6502 {
                     result
                 }
                 OAMDATA_I => {
-                    let oam_addr: u8 = self.read(OAMADDR);
-                    self.oam[oam_addr as usize]
+                    if self.oamdata_is_ff {
+                        0xff
+                    } else {
+                        self.oam[self.read(OAMADDR) as usize]
+                    }
                 }
                 _ => self.ppu_regs[(addr % 8) as usize],
             },
-            0x4000..0x4018 => self.apu_and_io_regs[(addr - 0x4000) as usize],
+            0x4000..0x4018 => match addr % 0x18 {
+                JOYPAD_I => {
+                    let result: u8 = self.buttons[self.current_button] as u8;
+                    if !self.strobe_mode {
+                        self.current_button = (self.current_button + 1) % 8;
+                    }
+                    result
+                }
+                _ => self.apu_and_io_regs[(addr - 0x4000) as usize]
+            },
             0x4018..0x4020 => 0,
             0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize],
         }
-    }
-
-    fn read16(&mut self, addr: u16) -> u16 {
-        ((self.read(addr.wrapping_add(1)) as u16) << 8) | (self.read(addr) as u16)
     }
 
     fn write(&mut self, addr: u16, val: u8) {
@@ -332,6 +952,13 @@ impl MOS6502 {
                         32
                     };
                 }
+                PPUCTRL_I => {
+                    let interrupts_disabled: bool = !(self.read(PPUCTRL) >> 7) != 0;
+                    self.ppu_regs[PPUCTRL_I as usize] = val;
+                    if interrupts_disabled && ((val >> 7) != 0) {
+                        self.nmi_interrupt()
+                    }
+                }
                 _ => {
                     self.ppu_regs[(addr % 8) as usize] = val;
                 }
@@ -341,13 +968,26 @@ impl MOS6502 {
                     for i in 0x00..0xff {
                         self.oam[i as usize] = self.read(((val as u16) << 8) | i);
                     }
-                    self.cycles += 513; // Might have to be 514
+                    self.cycles += 513 + self.cycles % 2;
+                }
+                JOYPAD_I => {
+                    if val & 0b1 > self.strobe_mode as u8 { // Entering strobe_mode
+                        self.current_button = 0;
+                        self.strobe_mode = true;
+                    } else if val & 0b1 < self.strobe_mode as u8 { // Leaving strobe_mode
+                        self.strobe_mode = false;
+                    }
+                    self.apu_and_io_regs[(addr - 0x4000) as usize] = val & 0b111
                 }
                 _ => self.apu_and_io_regs[(addr - 0x4000) as usize] = val,
             },
             0x4018..0x4020 => {}
             0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize] = val,
         }
+    }
+
+    fn read16(&mut self, addr: u16) -> u16 {
+        ((self.read(addr.wrapping_add(1)) as u16) << 8) | (self.read(addr) as u16)
     }
 
     fn get_x_scroll(&mut self) -> u16 {
@@ -464,7 +1104,17 @@ impl MOS6502 {
         self.pc = new_pc;
     }
 
+    fn nmi_interrupt(&mut self) {
+        self.push16(self.pc);
+        self.push(self.get_flags_byte(false));
+        self.interrupt_disable = true;
+        self.pc = self.read16(NMI_VECTOR);
+        self.cycles += 7; // TODO: Figure out what this should be.
+    }
+
     fn step(&mut self) {
+        let old_cycles = self.cycles;
+
         // All 6502 instructions begin with a 1-byte opcode
         let opcode: u8 = self.read(self.pc);
 
@@ -494,8 +1144,8 @@ impl MOS6502 {
         let absolute_y_crossed_page: bool = absolute_y_addr & 0xff00 != imm16 & 0xff00;
         let indirect_y_crossed_page: bool = indirect_y_addr & 0xff00 != indirect_y_base & 0xff00;
 
-        print!("{:04X} ", self.pc);
-        self.dump_regs();
+        //print!("{:04X} ", self.pc);
+        //self.dump_regs();
         match opcode {
             // ADC
             0x69 => {
@@ -678,7 +1328,7 @@ impl MOS6502 {
             0x00 => {
                 self.push16(self.pc.wrapping_add(2));
                 self.push(self.get_flags_byte(true));
-                self.pc = self.read16(INTERRUPT_VECTOR);
+                self.pc = self.read16(BRK_VECTOR);
                 self.interrupt_disable = true;
                 self.cycles += 7;
             }
@@ -1462,7 +2112,6 @@ impl MOS6502 {
                 self.pc = self.pc.wrapping_add(1);
                 self.cycles += 2;
             }
-
             // TXA
             0x8a => {
                 self.a = self.x;
@@ -1486,23 +2135,19 @@ impl MOS6502 {
                 self.cycles += 2;
             }
 
-            _ => panic!("Invalid opcode: 0x{:02x}", opcode),
+            _ => {
+                self.pc += 1;
+                panic!("Invalid opcode: 0x{:02x}", opcode);
+            }
         }
+
+        let cycles_elapsed = self.cycles - old_cycles;
     }
 }
 
 fn is_negative(val: u8) -> bool {
     val & 0b10000000 != 0
 }
-
-fn plot_px(canvas: &mut Canvas<Window>, color: Color, r: u8, c: u8) {
-    canvas.set_draw_color(color);
-    canvas
-        .draw_points([Point::new(c as i32, r as i32)].as_slice())
-        .expect("Couldn't plot pixel");
-}
-
-const CPU_CYCLES_PER_FRAME: u64 = 29780;
 
 fn main() {
     let args: Vec<_> = env::args_os().collect();
@@ -1513,7 +2158,7 @@ fn main() {
 
     let mut rom_file = File::open(&args[1]).expect("Couldn't open rom file");
 
-    let mut cpu = MOS6502::new(&mut rom_file);
+    let mut nes = Nes::new(&mut rom_file);
 
     let sdl_context = sdl2::init().expect("Couldn't initialize SDL2");
     let video_subsystem = sdl_context
@@ -1521,7 +2166,7 @@ fn main() {
         .expect("Couldn't initialize video subsystem");
 
     let window = video_subsystem
-        .window("nespump", 256, 240)
+        .window("nespump", 1024, 960)
         .position_centered()
         .build()
         .expect("Couldn't build window");
@@ -1531,49 +2176,97 @@ fn main() {
     canvas.present();
     let mut event_pump = sdl_context.event_pump().expect("Couldn't make event pump");
 
+    let mut steps: u64 = 0;
+
+    let mut paused: bool = false;
+
     'gameloop: loop {
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } => break 'gameloop,
-                Event::KeyDown {
-                    keycode: Some(Keycode::W),
-                    ..
-                } => cpu.key_down(Button::Up),
-                Event::KeyDown {
-                    keycode: Some(Keycode::S),
-                    ..
-                } => cpu.key_down(Button::Down),
-                Event::KeyDown {
-                    keycode: Some(Keycode::A),
-                    ..
-                } => cpu.key_down(Button::Left),
-                Event::KeyDown {
-                    keycode: Some(Keycode::D),
-                    ..
-                } => cpu.key_down(Button::Right),
-                Event::KeyDown {
-                    keycode: Some(Keycode::E),
-                    ..
-                } => cpu.key_down(Button::A),
-                Event::KeyDown {
-                    keycode: Some(Keycode::Q),
-                    ..
-                } => cpu.key_down(Button::B),
-                Event::KeyDown {
-                    keycode: Some(Keycode::LShift),
-                    ..
-                } => cpu.key_down(Button::Start),
-                Event::KeyDown {
-                    keycode: Some(Keycode::RShift),
-                    ..
-                } => cpu.key_down(Button::Select),
-                _ => {}
-            }
+        match event_pump.poll_event() {
+            Some(Event::Quit { .. }) => break 'gameloop,
+            Some(Event::KeyUp {
+                keycode: Some(Keycode::Up),
+                ..
+            }) => nes.key_up(4),
+            Some(Event::KeyUp {
+                keycode: Some(Keycode::Down),
+                ..
+            }) => nes.key_up(5),
+            Some(Event::KeyUp {
+                keycode: Some(Keycode::Left),
+                ..
+            }) => nes.key_up(6),
+            Some(Event::KeyUp {
+                keycode: Some(Keycode::Right),
+                ..
+            }) => nes.key_up(7),
+            Some(Event::KeyUp {
+                keycode: Some(Keycode::A),
+                ..
+            }) => nes.key_up(0),
+            Some(Event::KeyUp {
+                keycode: Some(Keycode::B),
+                ..
+            }) => nes.key_up(1),
+            Some(Event::KeyUp {
+                keycode: Some(Keycode::LShift),
+                ..
+            }) => nes.key_up(3),
+            Some(Event::KeyUp {
+                keycode: Some(Keycode::RShift),
+                ..
+            }) => nes.key_up(2),
+
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::Up),
+                ..
+            }) => nes.key_down(4),
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::Down),
+                ..
+            }) => nes.key_down(5),
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::Left),
+                ..
+            }) => nes.key_down(6),
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::Right),
+                ..
+            }) => nes.key_down(7),
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::A),
+                ..
+            }) => nes.key_down(0),
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::B),
+                ..
+            }) => nes.key_down(1),
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::LShift),
+                ..
+            }) => nes.key_down(3),
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::RShift),
+                ..
+            }) => nes.key_down(2),
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::Space),
+                ..
+            }) => paused = !paused,
+            Some(Event::KeyDown {
+                keycode: Some(Keycode::Q),
+                ..
+            }) => break 'gameloop,
+
+            _ => {}
         }
-        cpu.step();
-        canvas.present();
-        if cpu.cycles % CPU_CYCLES_PER_FRAME == 0 {
-            std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        if !paused {
+            nes.step();
+            steps += 1;
+            if steps % 8192 == 0 {
+                nes.render_bg(&mut canvas);
+                nes.render_sprites(&mut canvas);
+                canvas.present();
+            }
         }
     }
 }

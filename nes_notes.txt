@@ -1,0 +1,18 @@
+Pattern Table:
+    - Each pattern table stores 256 16-byte entries, each of which specifies the bitmap for an 8x8 tile
+    - The first 8 bytes specify the low bit of the index into a palette
+    - The first 8 bytes specify the high bit of the index into a palette
+    - There are 2 pattern tables. The first is stored in VRAM at 0000-0fff, and the second is stored in VRAM at 1000-1fff
+
+Palette RAM:
+    - Each palette is 4 bytes, and specifies 4 6-bit colors (the upper 2 bits are unused)
+    - There are 4 background palettes stored in VRAM at 3f00-3f0f
+    - There are 4 sprite palettes stored in VRAM at 3f10-3f1f
+    - Entry 0 of each palette is unused, except for entry 0 of palette 0, which is the background color.
+
+Nametables:
+    - Each nametable is 0x400 (1024) bytes large.
+    - There are 4 nametables (although some may be mirrored)
+    - Each byte in the nametable controls one 8x8 pixel tile.
+    - The nametable encodes how the tiles are put together
+    - The end of the nametable

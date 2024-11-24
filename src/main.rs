@@ -742,6 +742,60 @@ impl Nes {
         }
     }
 
+    fn render_pattern_table(&mut self, canvas: &mut Canvas<Window>) {
+        let pattern_table_base = self.get_bg_pattern_table_base(); // (PPU addr)
+        let name_table_base = self.get_name_table_base(); // (PPU addr)
+        let attribute_table_base = self.get_attribute_table_base(); // (PPU addr)
+        for r in 0..30 {
+            for c in 0..32 {
+                let name_table_entry: u8 = (r as u16 * 32 + c as u16) as u8;
+
+                let mut raw_tile_data: [u8; 16] = [0; 16];
+                for i in 0..raw_tile_data.len() {
+                    raw_tile_data[i] =
+                        self.ppu_read(pattern_table_base + name_table_entry as u16 * 16 + i as u16);
+                }
+                let tile: Tile = parse_tile(raw_tile_data);
+
+                let attribute_table_entry: u8 =
+                    self.ppu_read(attribute_table_base + (r / 4) * 8 + (c / 4));
+
+                let palette_index: u16 = if r % 2 == r % 4 && c % 2 == c % 4 {
+                    // upper left
+                    attribute_table_entry & 0b11
+                } else if r % 2 == r % 4 && c % 2 != c % 4 {
+                    // upper right
+                    (attribute_table_entry >> 2) & 0b11
+                } else if r % 2 != r % 4 && c % 2 == c % 4 {
+                    // lower left
+                    (attribute_table_entry >> 4) & 0b11
+                } else {
+                    // lower right
+                    (attribute_table_entry >> 6) & 0b11
+                } as u16;
+
+                let palette_base: u16 = 0x3f00 + 4 * palette_index; // BG_PALETTE_ADDR + sizeof(palette) * palette_index
+                let mut raw_palette_data: [u8; 4] = [0; 4];
+                for i in 0..raw_palette_data.len() {
+                    raw_palette_data[i] = self.ppu_read(palette_base + i as u16);
+                }
+                let palette: Palette = parse_palette(raw_palette_data);
+
+                plot_tile(
+                    canvas,
+                    tile,
+                    palette,
+                    (r * 8) as usize,
+                    (c * 8) as usize,
+                    false,
+                    false,
+                    false,
+                );
+            }
+        }
+    }
+
+
     fn render_sprites(&mut self, canvas: &mut Canvas<Window>) {
         let pattern_table_base = self.get_sprite_pattern_table_base(); // (PPU addr)
         for i in 0..(self.oam.len() / 4) {
@@ -2263,6 +2317,7 @@ fn main() {
             nes.step();
             steps += 1;
             if steps % 8192 == 0 {
+                // nes.render_pattern_table(&mut canvas);
                 nes.render_bg(&mut canvas);
                 nes.render_sprites(&mut canvas);
                 canvas.present();

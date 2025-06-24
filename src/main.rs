@@ -10,38 +10,25 @@ use sdl2::rect::Point;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
+const SCALE_FACTOR: usize = 1;
+
 fn plot_px(canvas: &mut Canvas<Window>, color: Color, r: usize, c: usize) {
     canvas.set_draw_color(color);
-    let mut points: [Point; 16] = [Point::new(0, 0); 16];
-    for i in 0..4 {
-        for j in 0..4 {
-            points[i * 4 + j] = Point::new((c * 4 + j) as i32, (r * 4 + i) as i32)
+    let mut points: [Point; SCALE_FACTOR * SCALE_FACTOR] = [Point::new(0, 0); SCALE_FACTOR * SCALE_FACTOR];
+    for i in 0..SCALE_FACTOR {
+        for j in 0..SCALE_FACTOR {
+            points[i * SCALE_FACTOR + j] = Point::new((c * SCALE_FACTOR + j) as i32, (r * SCALE_FACTOR + i) as i32)
         }
     }
-    canvas
-        .draw_points(points.as_slice())
-        .expect("Couldn't plot pixel");
+    canvas.draw_points(points.as_slice()).expect("Couldn't plot pixel");
 }
 
-fn plot_tile(
-    canvas: &mut Canvas<Window>,
-    tile: Tile,
-    palette: Palette,
-    y: usize,
-    x: usize,
-    h_flip: bool,
-    v_flip: bool,
-    allow_transparency: bool,
-) {
+fn plot_tile(canvas: &mut Canvas<Window>, tile: Tile, palette: Palette, y: usize, x: usize, h_flip: bool, v_flip: bool, allow_transparency: bool) {
     for i in 0..tile.data.len() {
         let r = if v_flip { tile.data.len() - i - 1 } else { i };
         for (j, &px) in tile.data[i].iter().enumerate() {
             if !allow_transparency || px != 0 {
-                let c = if h_flip {
-                    tile.data[i].len() - j - 1
-                } else {
-                    j
-                };
+                let c = if h_flip { tile.data[i].len() - j - 1 } else { j };
                 plot_px(canvas, palette.data[px as usize], y + r, x + c)
             }
         }
@@ -50,390 +37,70 @@ fn plot_tile(
 
 // Colors obtained from https://bugzmanov.github.io/nes_ebook/chapter_6_3.html
 pub static SYSTEM_PALETTE: [Color; 64] = [
-    Color {
-        r: 0x80,
-        g: 0x80,
-        b: 0x80,
-        a: 1,
-    },
-    Color {
-        r: 0x00,
-        g: 0x3D,
-        b: 0xA6,
-        a: 1,
-    },
-    Color {
-        r: 0x00,
-        g: 0x12,
-        b: 0xB0,
-        a: 1,
-    },
-    Color {
-        r: 0x44,
-        g: 0x00,
-        b: 0x96,
-        a: 1,
-    },
-    Color {
-        r: 0xA1,
-        g: 0x00,
-        b: 0x5E,
-        a: 1,
-    },
-    Color {
-        r: 0xC7,
-        g: 0x00,
-        b: 0x28,
-        a: 1,
-    },
-    Color {
-        r: 0xBA,
-        g: 0x06,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x8C,
-        g: 0x17,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x5C,
-        g: 0x2F,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x10,
-        g: 0x45,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x05,
-        g: 0x4A,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x00,
-        g: 0x47,
-        b: 0x2E,
-        a: 1,
-    },
-    Color {
-        r: 0x00,
-        g: 0x41,
-        b: 0x66,
-        a: 1,
-    },
-    Color {
-        r: 0x00,
-        g: 0x00,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x05,
-        g: 0x05,
-        b: 0x05,
-        a: 1,
-    },
-    Color {
-        r: 0x05,
-        g: 0x05,
-        b: 0x05,
-        a: 1,
-    },
-    Color {
-        r: 0xC7,
-        g: 0xC7,
-        b: 0xC7,
-        a: 1,
-    },
-    Color {
-        r: 0x00,
-        g: 0x77,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0x21,
-        g: 0x55,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0x82,
-        g: 0x37,
-        b: 0xFA,
-        a: 1,
-    },
-    Color {
-        r: 0xEB,
-        g: 0x2F,
-        b: 0xB5,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0x29,
-        b: 0x50,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0x22,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0xD6,
-        g: 0x32,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0xC4,
-        g: 0x62,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x35,
-        g: 0x80,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x05,
-        g: 0x8F,
-        b: 0x00,
-        a: 1,
-    },
-    Color {
-        r: 0x00,
-        g: 0x8A,
-        b: 0x55,
-        a: 1,
-    },
-    Color {
-        r: 0x00,
-        g: 0x99,
-        b: 0xCC,
-        a: 1,
-    },
-    Color {
-        r: 0x21,
-        g: 0x21,
-        b: 0x21,
-        a: 1,
-    },
-    Color {
-        r: 0x09,
-        g: 0x09,
-        b: 0x09,
-        a: 1,
-    },
-    Color {
-        r: 0x09,
-        g: 0x09,
-        b: 0x09,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0x0F,
-        g: 0xD7,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0x69,
-        g: 0xA2,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0xD4,
-        g: 0x80,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0x45,
-        b: 0xF3,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0x61,
-        b: 0x8B,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0x88,
-        b: 0x33,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0x9C,
-        b: 0x12,
-        a: 1,
-    },
-    Color {
-        r: 0xFA,
-        g: 0xBC,
-        b: 0x20,
-        a: 1,
-    },
-    Color {
-        r: 0x9F,
-        g: 0xE3,
-        b: 0x0E,
-        a: 1,
-    },
-    Color {
-        r: 0x2B,
-        g: 0xF0,
-        b: 0x35,
-        a: 1,
-    },
-    Color {
-        r: 0x0C,
-        g: 0xF0,
-        b: 0xA4,
-        a: 1,
-    },
-    Color {
-        r: 0x05,
-        g: 0xFB,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0x5E,
-        g: 0x5E,
-        b: 0x5E,
-        a: 1,
-    },
-    Color {
-        r: 0x0D,
-        g: 0x0D,
-        b: 0x0D,
-        a: 1,
-    },
-    Color {
-        r: 0x0D,
-        g: 0x0D,
-        b: 0x0D,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0xFF,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0xA6,
-        g: 0xFC,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0xB3,
-        g: 0xEC,
-        b: 0xFF,
-        a: 1,
-    },
-    Color {
-        r: 0xDA,
-        g: 0xAB,
-        b: 0xEB,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0xA8,
-        b: 0xF9,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0xAB,
-        b: 0xB3,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0xD2,
-        b: 0xB0,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0xEF,
-        b: 0xA6,
-        a: 1,
-    },
-    Color {
-        r: 0xFF,
-        g: 0xF7,
-        b: 0x9C,
-        a: 1,
-    },
-    Color {
-        r: 0xD7,
-        g: 0xE8,
-        b: 0x95,
-        a: 1,
-    },
-    Color {
-        r: 0xA6,
-        g: 0xED,
-        b: 0xAF,
-        a: 1,
-    },
-    Color {
-        r: 0xA2,
-        g: 0xF2,
-        b: 0xDA,
-        a: 1,
-    },
-    Color {
-        r: 0x99,
-        g: 0xFF,
-        b: 0xFC,
-        a: 1,
-    },
-    Color {
-        r: 0xDD,
-        g: 0xDD,
-        b: 0xDD,
-        a: 1,
-    },
-    Color {
-        r: 0x11,
-        g: 0x11,
-        b: 0x11,
-        a: 1,
-    },
-    Color {
-        r: 0x11,
-        g: 0x11,
-        b: 0x11,
-        a: 1,
-    },
+    Color { r: 0x80, g: 0x80, b: 0x80, a: 1 },
+    Color { r: 0x00, g: 0x3D, b: 0xA6, a: 1 },
+    Color { r: 0x00, g: 0x12, b: 0xB0, a: 1 },
+    Color { r: 0x44, g: 0x00, b: 0x96, a: 1 },
+    Color { r: 0xA1, g: 0x00, b: 0x5E, a: 1 },
+    Color { r: 0xC7, g: 0x00, b: 0x28, a: 1 },
+    Color { r: 0xBA, g: 0x06, b: 0x00, a: 1 },
+    Color { r: 0x8C, g: 0x17, b: 0x00, a: 1 },
+    Color { r: 0x5C, g: 0x2F, b: 0x00, a: 1 },
+    Color { r: 0x10, g: 0x45, b: 0x00, a: 1 },
+    Color { r: 0x05, g: 0x4A, b: 0x00, a: 1 },
+    Color { r: 0x00, g: 0x47, b: 0x2E, a: 1 },
+    Color { r: 0x00, g: 0x41, b: 0x66, a: 1 },
+    Color { r: 0x00, g: 0x00, b: 0x00, a: 1 },
+    Color { r: 0x05, g: 0x05, b: 0x05, a: 1 },
+    Color { r: 0x05, g: 0x05, b: 0x05, a: 1 },
+    Color { r: 0xC7, g: 0xC7, b: 0xC7, a: 1 },
+    Color { r: 0x00, g: 0x77, b: 0xFF, a: 1 },
+    Color { r: 0x21, g: 0x55, b: 0xFF, a: 1 },
+    Color { r: 0x82, g: 0x37, b: 0xFA, a: 1 },
+    Color { r: 0xEB, g: 0x2F, b: 0xB5, a: 1 },
+    Color { r: 0xFF, g: 0x29, b: 0x50, a: 1 },
+    Color { r: 0xFF, g: 0x22, b: 0x00, a: 1 },
+    Color { r: 0xD6, g: 0x32, b: 0x00, a: 1 },
+    Color { r: 0xC4, g: 0x62, b: 0x00, a: 1 },
+    Color { r: 0x35, g: 0x80, b: 0x00, a: 1 },
+    Color { r: 0x05, g: 0x8F, b: 0x00, a: 1 },
+    Color { r: 0x00, g: 0x8A, b: 0x55, a: 1 },
+    Color { r: 0x00, g: 0x99, b: 0xCC, a: 1 },
+    Color { r: 0x21, g: 0x21, b: 0x21, a: 1 },
+    Color { r: 0x09, g: 0x09, b: 0x09, a: 1 },
+    Color { r: 0x09, g: 0x09, b: 0x09, a: 1 },
+    Color { r: 0xFF, g: 0xFF, b: 0xFF, a: 1 },
+    Color { r: 0x0F, g: 0xD7, b: 0xFF, a: 1 },
+    Color { r: 0x69, g: 0xA2, b: 0xFF, a: 1 },
+    Color { r: 0xD4, g: 0x80, b: 0xFF, a: 1 },
+    Color { r: 0xFF, g: 0x45, b: 0xF3, a: 1 },
+    Color { r: 0xFF, g: 0x61, b: 0x8B, a: 1 },
+    Color { r: 0xFF, g: 0x88, b: 0x33, a: 1 },
+    Color { r: 0xFF, g: 0x9C, b: 0x12, a: 1 },
+    Color { r: 0xFA, g: 0xBC, b: 0x20, a: 1 },
+    Color { r: 0x9F, g: 0xE3, b: 0x0E, a: 1 },
+    Color { r: 0x2B, g: 0xF0, b: 0x35, a: 1 },
+    Color { r: 0x0C, g: 0xF0, b: 0xA4, a: 1 },
+    Color { r: 0x05, g: 0xFB, b: 0xFF, a: 1 },
+    Color { r: 0x5E, g: 0x5E, b: 0x5E, a: 1 },
+    Color { r: 0x0D, g: 0x0D, b: 0x0D, a: 1 },
+    Color { r: 0x0D, g: 0x0D, b: 0x0D, a: 1 },
+    Color { r: 0xFF, g: 0xFF, b: 0xFF, a: 1 },
+    Color { r: 0xA6, g: 0xFC, b: 0xFF, a: 1 },
+    Color { r: 0xB3, g: 0xEC, b: 0xFF, a: 1 },
+    Color { r: 0xDA, g: 0xAB, b: 0xEB, a: 1 },
+    Color { r: 0xFF, g: 0xA8, b: 0xF9, a: 1 },
+    Color { r: 0xFF, g: 0xAB, b: 0xB3, a: 1 },
+    Color { r: 0xFF, g: 0xD2, b: 0xB0, a: 1 },
+    Color { r: 0xFF, g: 0xEF, b: 0xA6, a: 1 },
+    Color { r: 0xFF, g: 0xF7, b: 0x9C, a: 1 },
+    Color { r: 0xD7, g: 0xE8, b: 0x95, a: 1 },
+    Color { r: 0xA6, g: 0xED, b: 0xAF, a: 1 },
+    Color { r: 0xA2, g: 0xF2, b: 0xDA, a: 1 },
+    Color { r: 0x99, g: 0xFF, b: 0xFC, a: 1 },
+    Color { r: 0xDD, g: 0xDD, b: 0xDD, a: 1 },
+    Color { r: 0x11, g: 0x11, b: 0x11, a: 1 },
+    Color { r: 0x11, g: 0x11, b: 0x11, a: 1 },
 ];
 
 struct Nes {
@@ -490,14 +157,7 @@ struct Palette {
 }
 
 fn parse_palette(data: [u8; 4]) -> Palette {
-    Palette {
-        data: [
-            SYSTEM_PALETTE[data[0] as usize],
-            SYSTEM_PALETTE[data[1] as usize],
-            SYSTEM_PALETTE[data[2] as usize],
-            SYSTEM_PALETTE[data[3] as usize],
-        ],
-    }
+    Palette { data: [SYSTEM_PALETTE[data[0] as usize], SYSTEM_PALETTE[data[1] as usize], SYSTEM_PALETTE[data[2] as usize], SYSTEM_PALETTE[data[3] as usize]] }
 }
 
 fn parse_tile(data: [u8; 16]) -> Tile {
@@ -589,70 +249,45 @@ impl Nes {
         let mut result: Self = Default::default();
 
         let mut magic: [u8; 4] = [0; 4];
-        rom_file
-            .read_exact(&mut magic)
-            .expect("Couldn't read magic");
+        rom_file.read_exact(&mut magic).expect("Couldn't read magic");
         if magic != [0x4e, 0x45, 0x53, 0x1a] {
             panic!("Invalid iNes magic");
         }
 
         let mut raw_prg_rom_size: [u8; 1] = [0];
-        rom_file
-            .read_exact(&mut raw_prg_rom_size)
-            .expect("Couldn't read PRG ROM size");
+        rom_file.read_exact(&mut raw_prg_rom_size).expect("Couldn't read PRG ROM size");
         let prg_rom_size: u16 = raw_prg_rom_size[0] as u16;
 
         let mut raw_chr_rom_size: [u8; 1] = [0];
-        rom_file
-            .read_exact(&mut raw_chr_rom_size)
-            .expect("Couldn't read CHR ROM size");
+        rom_file.read_exact(&mut raw_chr_rom_size).expect("Couldn't read CHR ROM size");
         let chr_rom_size: u16 = raw_chr_rom_size[0] as u16;
 
         let mut raw_flags_6: [u8; 1] = [0];
-        rom_file
-            .read_exact(&mut raw_flags_6)
-            .expect("Couldn't read flags 6");
+        rom_file.read_exact(&mut raw_flags_6).expect("Couldn't read flags 6");
 
         let mut raw_flags_7: [u8; 1] = [0];
-        rom_file
-            .read_exact(&mut raw_flags_7)
-            .expect("Couldn't read flags 7");
+        rom_file.read_exact(&mut raw_flags_7).expect("Couldn't read flags 7");
 
         let mut raw_flags_8: [u8; 1] = [0];
-        rom_file
-            .read_exact(&mut raw_flags_8)
-            .expect("Couldn't read flags 8");
+        rom_file.read_exact(&mut raw_flags_8).expect("Couldn't read flags 8");
 
         let mut raw_flags_9: [u8; 1] = [0];
-        rom_file
-            .read_exact(&mut raw_flags_9)
-            .expect("Couldn't read flags 9");
+        rom_file.read_exact(&mut raw_flags_9).expect("Couldn't read flags 9");
 
         let mut raw_flags_10: [u8; 1] = [0];
-        rom_file
-            .read_exact(&mut raw_flags_10)
-            .expect("Couldn't read flags 10");
+        rom_file.read_exact(&mut raw_flags_10).expect("Couldn't read flags 10");
 
         let mut unused: [u8; 5] = [0; 5];
-        rom_file
-            .read_exact(&mut unused)
-            .expect("Couldn't read header padding");
+        rom_file.read_exact(&mut unused).expect("Couldn't read header padding");
 
         if prg_rom_size > 2 {
             panic!("iNes parser doesn't yet support larger PRG ROMs");
         }
         for prg_rom_no in 0..prg_rom_size {
             let mut buf: [u8; 0x4000] = [0; 0x4000];
-            rom_file
-                .read_exact(&mut buf)
-                .expect("Couldn't read PRG ROM");
+            rom_file.read_exact(&mut buf).expect("Couldn't read PRG ROM");
             for (i, &byte) in buf.iter().enumerate() {
-                result.write(
-                    (if prg_rom_size == 2 { 0x8000 } else { 0xc000 })
-                        + prg_rom_no * 0x4000
-                        + i as u16,
-                    byte,
-                );
+                result.write((if prg_rom_size == 2 { 0x8000 } else { 0xc000 }) + prg_rom_no * 0x4000 + i as u16, byte);
             }
         }
 
@@ -661,9 +296,7 @@ impl Nes {
         }
         for chr_rom_no in 0..chr_rom_size {
             let mut buf: [u8; 0x2000] = [0; 0x2000];
-            rom_file
-                .read_exact(&mut buf)
-                .expect("Couldn't read CHR ROM");
+            rom_file.read_exact(&mut buf).expect("Couldn't read CHR ROM");
             for (i, &byte) in buf.iter().enumerate() {
                 result.ppu_write(chr_rom_no * 0x2000 + i as u16, byte);
             }
@@ -699,13 +332,11 @@ impl Nes {
 
                 let mut raw_tile_data: [u8; 16] = [0; 16];
                 for i in 0..raw_tile_data.len() {
-                    raw_tile_data[i] =
-                        self.ppu_read(pattern_table_base + name_table_entry as u16 * 16 + i as u16);
+                    raw_tile_data[i] = self.ppu_read(pattern_table_base + name_table_entry as u16 * 16 + i as u16);
                 }
                 let tile: Tile = parse_tile(raw_tile_data);
 
-                let attribute_table_entry: u8 =
-                    self.ppu_read(attribute_table_base + (r / 4) * 8 + (c / 4));
+                let attribute_table_entry: u8 = self.ppu_read(attribute_table_base + (r / 4) * 8 + (c / 4));
 
                 let palette_index: u16 = if r % 2 == r % 4 && c % 2 == c % 4 {
                     // upper left
@@ -728,16 +359,7 @@ impl Nes {
                 }
                 let palette: Palette = parse_palette(raw_palette_data);
 
-                plot_tile(
-                    canvas,
-                    tile,
-                    palette,
-                    (r * 8) as usize,
-                    (c * 8) as usize,
-                    false,
-                    false,
-                    false,
-                );
+                plot_tile(canvas, tile, palette, (r * 8) as usize, (c * 8) as usize, false, false, false);
             }
         }
     }
@@ -752,13 +374,11 @@ impl Nes {
 
                 let mut raw_tile_data: [u8; 16] = [0; 16];
                 for i in 0..raw_tile_data.len() {
-                    raw_tile_data[i] =
-                        self.ppu_read(pattern_table_base + name_table_entry as u16 * 16 + i as u16);
+                    raw_tile_data[i] = self.ppu_read(pattern_table_base + name_table_entry as u16 * 16 + i as u16);
                 }
                 let tile: Tile = parse_tile(raw_tile_data);
 
-                let attribute_table_entry: u8 =
-                    self.ppu_read(attribute_table_base + (r / 4) * 8 + (c / 4));
+                let attribute_table_entry: u8 = self.ppu_read(attribute_table_base + (r / 4) * 8 + (c / 4));
 
                 let palette_index: u16 = if r % 2 == r % 4 && c % 2 == c % 4 {
                     // upper left
@@ -781,16 +401,7 @@ impl Nes {
                 }
                 let palette: Palette = parse_palette(raw_palette_data);
 
-                plot_tile(
-                    canvas,
-                    tile,
-                    palette,
-                    (r * 8) as usize,
-                    (c * 8) as usize,
-                    false,
-                    false,
-                    false,
-                );
+                plot_tile(canvas, tile, palette, (r * 8) as usize, (c * 8) as usize, false, false, false);
             }
         }
     }
@@ -805,9 +416,7 @@ impl Nes {
 
             let mut raw_tile_data: [u8; 16] = [0; 16];
             for i in 0..raw_tile_data.len() {
-                raw_tile_data[i] = self.ppu_read(
-                    pattern_table_base + sprite.pattern_table_index as u16 * 16 + i as u16,
-                );
+                raw_tile_data[i] = self.ppu_read(pattern_table_base + sprite.pattern_table_index as u16 * 16 + i as u16);
             }
             let tile: Tile = parse_tile(raw_tile_data);
 
@@ -818,16 +427,7 @@ impl Nes {
             }
             let palette: Palette = parse_palette(raw_palette_data);
 
-            plot_tile(
-                canvas,
-                tile,
-                palette,
-                sprite.r as usize,
-                sprite.c as usize,
-                sprite.h_flip,
-                sprite.v_flip,
-                true,
-            )
+            plot_tile(canvas, tile, palette, sprite.r as usize, sprite.c as usize, sprite.h_flip, sprite.v_flip, true)
         }
     }
 
@@ -864,16 +464,7 @@ impl Nes {
     }
 
     fn dump_regs(&self) {
-        println!(
-            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} PPUADDR: {:04X} CYC:{}",
-            self.a,
-            self.x,
-            self.y,
-            self.get_flags_byte(false),
-            self.s,
-            self.ppuaddr,
-            self.cycles
-        );
+        println!("A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} PPUADDR: {:04X} CYC:{}", self.a, self.x, self.y, self.get_flags_byte(false), self.s, self.ppuaddr, self.cycles);
     }
 
     fn update_nz_flags(&mut self, val: u8) {
@@ -882,14 +473,7 @@ impl Nes {
     }
 
     fn get_flags_byte(&self, b: bool) -> u8 {
-        ((self.negative as u8) << 7)
-            | ((self.overflow as u8) << 6)
-            | (1u8 << 5)
-            | ((b as u8) << 4)
-            | ((self.decimal_mode as u8) << 3)
-            | ((self.interrupt_disable as u8) << 2)
-            | ((self.zero as u8) << 1)
-            | (self.carry as u8)
+        ((self.negative as u8) << 7) | ((self.overflow as u8) << 6) | (1u8 << 5) | ((b as u8) << 4) | ((self.decimal_mode as u8) << 3) | ((self.interrupt_disable as u8) << 2) | ((self.zero as u8) << 1) | (self.carry as u8)
     }
 
     fn push(&mut self, val: u8) {
@@ -944,11 +528,7 @@ impl Nes {
                 PPUDATA_I => {
                     let result: u8 = self.ppudata;
                     self.ppudata = self.ppu_read(self.ppuaddr);
-                    self.ppuaddr += if (self.read(PPUCTRL) & 0b100) == 0 {
-                        1
-                    } else {
-                        32
-                    };
+                    self.ppuaddr += if (self.read(PPUCTRL) & 0b100) == 0 { 1 } else { 32 };
                     result
                 }
                 OAMDATA_I => {
@@ -999,11 +579,7 @@ impl Nes {
                 }
                 PPUDATA_I => {
                     self.ppu_write(self.ppuaddr, val);
-                    self.ppuaddr += if (self.read(PPUCTRL) & 0b100) == 0 {
-                        1
-                    } else {
-                        32
-                    };
+                    self.ppuaddr += if (self.read(PPUCTRL) & 0b100) == 0 { 1 } else { 32 };
                 }
                 PPUCTRL_I => {
                     let interrupts_disabled: bool = !(self.read(PPUCTRL) >> 7) != 0;
@@ -1054,14 +630,11 @@ impl Nes {
     }
 
     fn adc(&mut self, op: u8) -> u8 {
-        let result_16: u16 = (self.a as u16)
-            .wrapping_add(op as u16)
-            .wrapping_add(self.carry as u16);
+        let result_16: u16 = (self.a as u16).wrapping_add(op as u16).wrapping_add(self.carry as u16);
         let result = result_16 as u8;
 
         self.carry = result_16 > 255;
-        self.overflow =
-            (is_negative(self.a) == is_negative(op)) && (is_negative(result) != is_negative(op));
+        self.overflow = (is_negative(self.a) == is_negative(op)) && (is_negative(result) != is_negative(op));
         self.update_nz_flags(result);
 
         result
@@ -1142,8 +715,7 @@ impl Nes {
         let result_16: i16 = (self.a as i16) - (op as i16) - (!self.carry as i16);
         let result: u8 = result_16 as u8;
         self.carry = result_16 >= 0;
-        self.overflow = (is_negative(result) != is_negative(self.a))
-            && (is_negative(result) == is_negative(op));
+        self.overflow = (is_negative(result) != is_negative(self.a)) && (is_negative(result) == is_negative(op));
         self.update_nz_flags(result);
         result
     }
@@ -1154,8 +726,7 @@ impl Nes {
         if cond {
             new_pc = self.pc.wrapping_add(op as i8 as u16);
         }
-        self.cycles +=
-            2 + (cond as u64) + ((cond as u64) * ((new_pc & 0xff00 != self.pc & 0xff00) as u64));
+        self.cycles += 2 + (cond as u64) + ((cond as u64) * ((new_pc & 0xff00 != self.pc & 0xff00) as u64));
         self.pc = new_pc;
     }
 
@@ -1187,12 +758,9 @@ impl Nes {
         let absolute_x_addr: u16 = imm16.wrapping_add(self.x as u16);
         let absolute_y_addr: u16 = imm16.wrapping_add(self.y as u16);
 
-        let indirect_x_addr: u16 =
-            ((self.read((imm8.wrapping_add(self.x).wrapping_add(1)) as u16) as u16) << 8)
-                | (self.read((imm8.wrapping_add(self.x)) as u16) as u16);
+        let indirect_x_addr: u16 = ((self.read((imm8.wrapping_add(self.x).wrapping_add(1)) as u16) as u16) << 8) | (self.read((imm8.wrapping_add(self.x)) as u16) as u16);
 
-        let indirect_y_base: u16 = ((self.read((imm8.wrapping_add(1)) as u16) as u16) << 8)
-            | self.read(imm8 as u16) as u16;
+        let indirect_y_base: u16 = ((self.read((imm8.wrapping_add(1)) as u16) as u16) << 8) | self.read(imm8 as u16) as u16;
         let indirect_y_addr: u16 = indirect_y_base.wrapping_add(self.y as u16);
 
         let absolute_x_crossed_page: bool = absolute_x_addr & 0xff00 != imm16 & 0xff00;
@@ -1656,11 +1224,7 @@ impl Nes {
                 self.cycles += 3;
             }
             0x6c => {
-                let indirect_addr: u16 = ((self
-                    .read((absolute_addr & 0xff00) | ((absolute_addr as u8).wrapping_add(1) as u16))
-                    as u16)
-                    << 8)
-                    | (self.read(absolute_addr) as u16);
+                let indirect_addr: u16 = ((self.read((absolute_addr & 0xff00) | ((absolute_addr as u8).wrapping_add(1) as u16)) as u16) << 8) | (self.read(absolute_addr) as u16);
                 self.pc = indirect_addr;
                 self.cycles += 5;
             }
@@ -2216,15 +1780,9 @@ fn main() {
     let mut nes = Nes::new(&mut rom_file);
 
     let sdl_context = sdl2::init().expect("Couldn't initialize SDL2");
-    let video_subsystem = sdl_context
-        .video()
-        .expect("Couldn't initialize video subsystem");
+    let video_subsystem = sdl_context.video().expect("Couldn't initialize video subsystem");
 
-    let window = video_subsystem
-        .window("nespump", 1024, 960)
-        .position_centered()
-        .build()
-        .expect("Couldn't build window");
+    let window = video_subsystem.window("nespump", 256, 240).position_centered().build().expect("Couldn't build window");
 
     let mut canvas: Canvas<Window> = window.into_canvas().build().expect("Couldn't build canvas");
     canvas.clear();
@@ -2238,79 +1796,25 @@ fn main() {
     'gameloop: loop {
         match event_pump.poll_event() {
             Some(Event::Quit { .. }) => break 'gameloop,
-            Some(Event::KeyUp {
-                keycode: Some(Keycode::Up),
-                ..
-            }) => nes.key_up(4),
-            Some(Event::KeyUp {
-                keycode: Some(Keycode::Down),
-                ..
-            }) => nes.key_up(5),
-            Some(Event::KeyUp {
-                keycode: Some(Keycode::Left),
-                ..
-            }) => nes.key_up(6),
-            Some(Event::KeyUp {
-                keycode: Some(Keycode::Right),
-                ..
-            }) => nes.key_up(7),
-            Some(Event::KeyUp {
-                keycode: Some(Keycode::A),
-                ..
-            }) => nes.key_up(0),
-            Some(Event::KeyUp {
-                keycode: Some(Keycode::B),
-                ..
-            }) => nes.key_up(1),
-            Some(Event::KeyUp {
-                keycode: Some(Keycode::LShift),
-                ..
-            }) => nes.key_up(3),
-            Some(Event::KeyUp {
-                keycode: Some(Keycode::RShift),
-                ..
-            }) => nes.key_up(2),
+            Some(Event::KeyUp { keycode: Some(Keycode::Up), .. }) => nes.key_up(4),
+            Some(Event::KeyUp { keycode: Some(Keycode::Down), .. }) => nes.key_up(5),
+            Some(Event::KeyUp { keycode: Some(Keycode::Left), .. }) => nes.key_up(6),
+            Some(Event::KeyUp { keycode: Some(Keycode::Right), .. }) => nes.key_up(7),
+            Some(Event::KeyUp { keycode: Some(Keycode::A), .. }) => nes.key_up(0),
+            Some(Event::KeyUp { keycode: Some(Keycode::B), .. }) => nes.key_up(1),
+            Some(Event::KeyUp { keycode: Some(Keycode::LShift), .. }) => nes.key_up(3),
+            Some(Event::KeyUp { keycode: Some(Keycode::RShift), .. }) => nes.key_up(2),
 
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::Up),
-                ..
-            }) => nes.key_down(4),
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::Down),
-                ..
-            }) => nes.key_down(5),
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::Left),
-                ..
-            }) => nes.key_down(6),
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::Right),
-                ..
-            }) => nes.key_down(7),
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::A),
-                ..
-            }) => nes.key_down(0),
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::B),
-                ..
-            }) => nes.key_down(1),
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::LShift),
-                ..
-            }) => nes.key_down(3),
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::RShift),
-                ..
-            }) => nes.key_down(2),
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::Space),
-                ..
-            }) => paused = !paused,
-            Some(Event::KeyDown {
-                keycode: Some(Keycode::Q),
-                ..
-            }) => break 'gameloop,
+            Some(Event::KeyDown { keycode: Some(Keycode::Up), .. }) => nes.key_down(4),
+            Some(Event::KeyDown { keycode: Some(Keycode::Down), .. }) => nes.key_down(5),
+            Some(Event::KeyDown { keycode: Some(Keycode::Left), .. }) => nes.key_down(6),
+            Some(Event::KeyDown { keycode: Some(Keycode::Right), .. }) => nes.key_down(7),
+            Some(Event::KeyDown { keycode: Some(Keycode::A), .. }) => nes.key_down(0),
+            Some(Event::KeyDown { keycode: Some(Keycode::B), .. }) => nes.key_down(1),
+            Some(Event::KeyDown { keycode: Some(Keycode::LShift), .. }) => nes.key_down(3),
+            Some(Event::KeyDown { keycode: Some(Keycode::RShift), .. }) => nes.key_down(2),
+            Some(Event::KeyDown { keycode: Some(Keycode::Space), .. }) => paused = !paused,
+            Some(Event::KeyDown { keycode: Some(Keycode::Q), .. }) => break 'gameloop,
 
             _ => {}
         }

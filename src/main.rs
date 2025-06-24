@@ -795,7 +795,6 @@ impl Nes {
         }
     }
 
-
     fn render_sprites(&mut self, canvas: &mut Canvas<Window>) {
         let pattern_table_base = self.get_sprite_pattern_table_base(); // (PPU addr)
         for i in 0..(self.oam.len() / 4) {
@@ -969,7 +968,7 @@ impl Nes {
                     }
                     result
                 }
-                _ => self.apu_and_io_regs[(addr - 0x4000) as usize]
+                _ => self.apu_and_io_regs[(addr - 0x4000) as usize],
             },
             0x4018..0x4020 => 0,
             0x4020..=0xffff => self.cartridge[(addr - 0x4020) as usize],
@@ -1025,10 +1024,12 @@ impl Nes {
                     self.cycles += 513 + self.cycles % 2;
                 }
                 JOYPAD_I => {
-                    if val & 0b1 > self.strobe_mode as u8 { // Entering strobe_mode
+                    if val & 0b1 > self.strobe_mode as u8 {
+                        // Entering strobe_mode
                         self.current_button = 0;
                         self.strobe_mode = true;
-                    } else if val & 0b1 < self.strobe_mode as u8 { // Leaving strobe_mode
+                    } else if val & 0b1 < self.strobe_mode as u8 {
+                        // Leaving strobe_mode
                         self.strobe_mode = false;
                     }
                     self.apu_and_io_regs[(addr - 0x4000) as usize] = val & 0b111
